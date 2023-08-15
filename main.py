@@ -11,14 +11,14 @@ dp = Dispatcher(bot)
 
 # Хэндлер на команду /start
 @dp.message_handler(commands=['start'])
-async def process_start_command(message: types.Message):
-    await message.reply(START_TEXT)
+async def echo_message(msg: types.Message):
+    await bot.send_message(msg.from_user.id, START_TEXT)
 
 
 # Хэндлер на команду /help
 @dp.message_handler(commands=['help'])
-async def process_help_command(message: types.Message):
-    await message.reply(HELP_TEXT)
+async def echo_message(msg: types.Message):
+    await bot.send_message(msg.from_user.id, HELP_TEXT)
 
 
 # Хэндлер на текстовые сообщения

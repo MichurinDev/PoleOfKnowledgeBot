@@ -1,2 +1,2 @@
-START_TEXT = ""
-HELP_TEXT = ""
+START_TEXT = "Привет!"
+HELP_TEXT = "Инструкция:"
