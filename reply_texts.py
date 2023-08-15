@@ -1,0 +1,2 @@
+START_TEXT = ""
+HELP_TEXT = ""
