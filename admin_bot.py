@@ -1,5 +1,6 @@
 from notifiers import get_notifier
 from res.config_reader import config
+from res.reply_texts import *
 
 from aiogram import Bot, types, Dispatcher, executor
 
@@ -17,9 +18,6 @@ dp = Dispatcher(bot)
 conn = sqlite3.connect('res/db/PoleOfKnowledge_db.db')
 cursor = conn.cursor()
 
-# Аккаунты-администраторы
-ADMIN_ID = cursor.execute(f''' SELECT * FROM Admins''').fetchall()
-
 
 def send_notify(token: str, msg: str, chatId: int):
     telegram = get_notifier('telegram')
@@ -32,23 +30,24 @@ def send_notify(token: str, msg: str, chatId: int):
 # Хэндлер на команду /start
 @dp.message_handler(commands=['start'])
 async def start(msg: types.Message):
-    if msg.from_user.id in ADMIN_ID:
-        await bot.send_message(msg.from_user.id, "Отправьте сообщение")
-    else:
-        await bot.send_message(msg.from_user.id, "У Вас недостаточно прав для использования админ-бота")
+    await bot.send_message(msg.from_user.id, "Отправьте сообщение")
 
 
 # Хэндлер на текстовые сообщения
 @dp.message_handler()
 async def reply_to_text_msg(msg: types.Message):
-    if msg.from_user.id in ADMIN_ID:
+    # Аккаунты-администраторы
+    ADMINS_ID = [i[0] for i in
+                 cursor.execute(f''' SELECT * FROM Admins''').fetchall()]
+
+    if msg.from_user.id in ADMINS_ID:
         cursor.execute(
             f''' SELECT * FROM UsersInfo''')
         users = cursor.fetchall()
         for user in users:
             send_notify(token=TOKEN, msg=msg.text, chatId=user[0])
     else:
-        await bot.send_message(msg.from_user.id, "У Вас недостаточно прав для использования админ-бота")
+        await bot.send_message(msg.from_user.id, ADMINISTRATOR_ACCESS_ERROR)
 
 
 # Запуск бота
