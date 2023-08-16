@@ -18,7 +18,7 @@ conn = sqlite3.connect('res/db/PoleOfKnowledge_db.db')
 cursor = conn.cursor()
 
 # Аккаунты-администраторы
-ADMIN_ID = cursor.execute(f''' SELECT * FROM Admin''').fetchall()
+ADMIN_ID = cursor.execute(f''' SELECT * FROM Admins''').fetchall()
 
 
 def send_notify(token: str, msg: str, chatId: int):
@@ -32,17 +32,23 @@ def send_notify(token: str, msg: str, chatId: int):
 # Хэндлер на команду /start
 @dp.message_handler(commands=['start'])
 async def start(msg: types.Message):
-    await bot.send_message(msg.from_user.id, "Отправьте сообщение")
+    if msg.from_user.id in ADMIN_ID:
+        await bot.send_message(msg.from_user.id, "Отправьте сообщение")
+    else:
+        await bot.send_message(msg.from_user.id, "У Вас недостаточно прав для использования админ-бота")
 
 
 # Хэндлер на текстовые сообщения
 @dp.message_handler()
 async def reply_to_text_msg(msg: types.Message):
-    cursor.execute(
-        f''' SELECT * FROM UsersInfo''')
-    users = cursor.fetchall()
-    for user in users:
-        send_notify(token=TOKEN, msg=msg.text, chatId=user[0])
+    if msg.from_user.id in ADMIN_ID:
+        cursor.execute(
+            f''' SELECT * FROM UsersInfo''')
+        users = cursor.fetchall()
+        for user in users:
+            send_notify(token=TOKEN, msg=msg.text, chatId=user[0])
+    else:
+        await bot.send_message(msg.from_user.id, "У Вас недостаточно прав для использования админ-бота")
 
 
 # Запуск бота
