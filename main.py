@@ -70,10 +70,12 @@ async def start(msg: types.Message):
 
         # Отправляем ее вместе с приветственным сообщением
         # для зарегистрированного пользователя
-        await bot.send_message(
-            msg.from_user.id, f"Здравствуйте, {users[0][1]}!",
-            reply_markup=keyboard)
+        if msg.text == "/start":
+            await bot.send_message(
+                msg.from_user.id, f"Здравствуйте, {users[0][1]}!")
 
+        await bot.send_message(msg.from_user.id,
+                               MENU_TEXT, reply_markup=keyboard)
         await state.set_state(BotStates.HOME_STATE.state)
 
     else:
@@ -375,21 +377,7 @@ async def score_event(msg: types.Message):
 
 @dp.message_handler(state=BotStates.CHOICE_FORUM_DATE_FOR_SING_UP_FOR_EVENT)
 async def score_event(msg: types.Message):
-    # Берём даты, на которые назначены мероприятия
-    cursor.execute(f''' SELECT date FROM Events''')
-    dates = set([i[0] for i in cursor.fetchall()])
-
-    if msg.text == "В главное меню":
-        # Переходим в главное меню
-        state = dp.current_state(user=msg.from_user.id)
-        await state.set_state(BotStates.START_STATE)
-        await start(msg)
-    # Если в эту дату нет мероприятий (ошибочный ввод)
-    elif msg.text not in dates:
-        await bot.send_message(msg.from_user.id,
-                               "В выбранный день мероприятий нет")
-    # И если есть (корретный ввод)
-    else:
+    if msg.text != "В главное меню":
         # Берем все мероприятия за введённую дату
         events = cursor.execute(f''' SELECT * FROM Events WHERE date=?''',
                                 (msg.text,)).fetchall()
@@ -433,8 +421,12 @@ async def score_event(msg: types.Message):
         else:
             await bot.send_message(msg.from_user.id,
                                    "На выбранный день " +
-                                   "нет доступных мероприятий",
-                                   reply_markup=keyboard)
+                                   "нет доступных мероприятий")
+    else:
+        # Переходим в главное меню
+        state = dp.current_state(user=msg.from_user.id)
+        await state.set_state(BotStates.START_STATE)
+        await start(msg)
 
 
 @dp.message_handler(state=BotStates.CHOICE_EVENT_SING_UP_FOR_EVENT)

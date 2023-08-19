@@ -26,6 +26,8 @@ class BotStates(StatesGroup):
     CHOICE_EVENT_STATE = State()
     UPLOAD_PARTICIPANTS_LIST_STATE = State()
 
+    CHOICE_QUEST_ACTION_STATE = State()
+
 
 # Объект бота
 bot = Bot(token=ADMIN_TOKEN)
@@ -94,11 +96,24 @@ async def home(msg: types.Message):
 
         state = dp.current_state(user=msg.from_user.id)
         await state.set_state(BotStates.CHOICE_EVENT_STATE.state)
+    elif msg.text == buttons[2]:
+        # Формируем клавиатуру
+        keyboard = ReplyKeyboardMarkup() \
+            .add(KeyboardButton("Распределить участников по командам")) \
+            .add(KeyboardButton("Выгрузить список участников по командам"))
+
+        # Отправляем сообщение
+        await bot.send_message(msg.from_user.id, "Выберите действие:",
+                               reply_markup=keyboard)
+
+        # Переходим на стадию выбора действия
+        state = dp.current_state(user=msg.from_user.id)
+        await state.set_state(BotStates.CHOICE_QUEST_ACTION_STATE.state)
 
 
 # Отправка сообщений участникам форума от лица "клиентского" бота
 @dp.message_handler(state=BotStates.SEND_MESSAGE_STATE)
-async def reply_to_text_msg(msg: types.Message):
+async def send_msg_to_users(msg: types.Message):
     if msg.text != "В главное меню":
         # Аккаунты-администраторы
         ADMINS_ID = [i[0] for i in
@@ -132,30 +147,83 @@ async def reply_to_text_msg(msg: types.Message):
 
 
 @dp.message_handler(state=BotStates.CHOICE_EVENT_STATE)
-async def get_part_by_event_title(msg: types.Message):
-    # Читаем JSON-файл с участниками мероприятий
-    with open('./res/data/participants_of_events.json',
-              'r', encoding='utf-8') as participants_of_events:
-        # Читаем файл
-        data = json.load(participants_of_events)
+async def get_parts_by_event_title(msg: types.Message):
+    if msg.text != "В главное меню":
+        # Читаем JSON-файл с участниками мероприятий
+        with open('./res/data/participants_of_events.json',
+                  'r', encoding='utf-8') as participants_of_events:
+            # Читаем файл
+            data = json.load(participants_of_events)
 
-    if msg.text in data:
-        # Список ID участников мероприятия
-        participants = data[msg.text]
-        # ФИО участников мерпориятия по ID: [ФИО1, ФИО2...]
-        usernames = [x[0] for x in cursor.execute(f''' SELECT name FROM UsersInfo WHERE tg_id in ({','.join(list(map(str, participants)))})''').fetchall()]
+        if msg.text in data:
+            # Список ID участников мероприятия
+            participants = data[msg.text]
+            # ФИО участников мерпориятия по ID: [ФИО1, ФИО2...]
+            usernames = [x[0] for x in cursor.execute(
+                f''' SELECT name FROM UsersInfo
+                WHERE tg_id in ({','.join(list(map(str, participants)))})'''
+                ).fetchall()]
 
-        # Формируем сообщение
-        send_text = f"Участники мероприятия \"{msg.text}\" ({len(usernames)} человек):"
-        for user in usernames:
-            send_text += f"\n- {user}"
+            # Формируем сообщение
+            send_text = f"Участники мероприятия \"{msg.text}\" " + \
+                f"({len(usernames)} человек):"
+            for user in usernames:
+                send_text += f"\n- {user}"
 
-        # Отправляем сообщение
-        await bot.send_message(msg.from_user.id, send_text)
-    else:
-        await bot.send_message(msg.from_user.id,
-                               f"На мероприятие \"{msg.text}\" еще никто не " +
-                               "зарегистрировался!")
+            # Отправляем сообщение
+            await bot.send_message(msg.from_user.id, send_text)
+        else:
+            await bot.send_message(msg.from_user.id,
+                                   f"На мероприятие \"{msg.text}\" еще никто" +
+                                   " не зарегистрировался!")
+
+    # Выходим в главное меню
+    state = dp.current_state(user=msg.from_user.id)
+    await state.set_state(BotStates.HOME_STATE.state)
+    await start(msg)
+
+
+@dp.message_handler(state=BotStates.CHOICE_QUEST_ACTION_STATE)
+async def quests_actions(msg: types.Message):
+    state = dp.current_state(user=msg.from_user.id)
+
+    if msg.text == "Распределить участников по командам":
+        users_id = [x[0] for x in cursor.execute(f''' SELECT tg_id FROM
+                                                 UsersInfo''').fetchall()]
+
+        # Формируем список команд
+        data = {}
+        if len(users_id) <= 15:
+            data["Команда #1"] = users_id
+        else:
+            n = 0
+            if len(users_id) % 15 != 0:
+                n = 1
+
+            for i in range(0, len(users_id) // 15 + n):
+                data[f"Команда #{i+1}"] = users_id[15*i:15*(i+1)]
+
+        # Обновляем JSON-файл с информацией о командах для квеста
+        with open('./res/data/quest_commands.json',
+                  'w', encoding='utf-8') as quest_commands:
+            json.dump(data,
+                      quest_commands,
+                      indent=4,
+                      ensure_ascii=False)
+
+        await bot.send_message(msg.from_user.id, "Команды сформированы!")
+        await bot.send_message(msg.from_user.id, "Отправка сообщений о" +
+                               " распределении участникам...")
+
+        for team in data:
+            for user in data[team]:
+                print(user)
+                send_notify(TOKEN, f"✅ Вы распределены в {team} для" +
+                            " прохождения квеста!", user)
+
+        await bot.send_message(msg.from_user.id, "Сообщения отправлены!")
+    elif msg.text == "Выгрузить список участников по командам":
+        pass
 
     # Выходим в главное меню
     state = dp.current_state(user=msg.from_user.id)
