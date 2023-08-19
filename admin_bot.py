@@ -15,7 +15,7 @@ bot = Bot(token=ADMIN_TOKEN)
 dp = Dispatcher(bot)
 
 # Подгружаем БД
-conn = sqlite3.connect('res/db/PoleOfKnowledge_db.db')
+conn = sqlite3.connect('res/data/PoleOfKnowledge_db.db')
 cursor = conn.cursor()
 
 
