@@ -97,18 +97,31 @@ async def home(msg: types.Message):
         state = dp.current_state(user=msg.from_user.id)
         await state.set_state(BotStates.CHOICE_EVENT_STATE.state)
     elif msg.text == buttons[2]:
-        # Формируем клавиатуру
-        keyboard = ReplyKeyboardMarkup() \
-            .add(KeyboardButton("Распределить участников по командам")) \
-            .add(KeyboardButton("Выгрузить список участников по командам"))
+        # Открываем JSON с информацией о командах для квеста
+        with open('./res/data/quest_commands.json',
+                  'r', encoding='utf-8') as participants_of_events:
+            # Читаем файл
+            data = json.load(participants_of_events)
 
-        # Отправляем сообщение
-        await bot.send_message(msg.from_user.id, "Выберите действие:",
-                               reply_markup=keyboard)
+        if not data:
+            await bot\
+                .send_message(msg.from_user.id,
+                              "Участники форума не распределены на команды!")
+        else:
+            send_message = ""
+            for team in data:
+                send_message += f"\n\n{team}:"
+                # ФИО участников мерпориятия по ID: [ФИО1, ФИО2...]
+                ids_str = ','.join(list(map(str, data[team])))
+                teamers_list = \
+                    [x[0] for x in cursor
+                     .execute(f''' SELECT name FROM UsersInfo
+                              WHERE tg_id in ({ids_str})''').fetchall()]
 
-        # Переходим на стадию выбора действия
-        state = dp.current_state(user=msg.from_user.id)
-        await state.set_state(BotStates.CHOICE_QUEST_ACTION_STATE.state)
+                for user in teamers_list:
+                    send_message += f"\n- {user}"
+
+            await bot.send_message(msg.from_user.id, send_message)
 
 
 # Отправка сообщений участникам форума от лица "клиентского" бота
@@ -182,53 +195,6 @@ async def get_parts_by_event_title(msg: types.Message):
     await state.set_state(BotStates.HOME_STATE.state)
     await start(msg)
 
-
-@dp.message_handler(state=BotStates.CHOICE_QUEST_ACTION_STATE)
-async def quests_actions(msg: types.Message):
-    state = dp.current_state(user=msg.from_user.id)
-
-    if msg.text == "Распределить участников по командам":
-        users_id = [x[0] for x in cursor.execute(f''' SELECT tg_id FROM
-                                                 UsersInfo''').fetchall()]
-
-        # Формируем список команд
-        data = {}
-        if len(users_id) <= 15:
-            data["Команда #1"] = users_id
-        else:
-            n = 0
-            if len(users_id) % 15 != 0:
-                n = 1
-
-            for i in range(0, len(users_id) // 15 + n):
-                data[f"Команда #{i+1}"] = users_id[15*i:15*(i+1)]
-
-        # Обновляем JSON-файл с информацией о командах для квеста
-        with open('./res/data/quest_commands.json',
-                  'w', encoding='utf-8') as quest_commands:
-            json.dump(data,
-                      quest_commands,
-                      indent=4,
-                      ensure_ascii=False)
-
-        await bot.send_message(msg.from_user.id, "Команды сформированы!")
-        await bot.send_message(msg.from_user.id, "Отправка сообщений о" +
-                               " распределении участникам...")
-
-        for team in data:
-            for user in data[team]:
-                print(user)
-                send_notify(TOKEN, f"✅ Вы распределены в {team} для" +
-                            " прохождения квеста!", user)
-
-        await bot.send_message(msg.from_user.id, "Сообщения отправлены!")
-    elif msg.text == "Выгрузить список участников по командам":
-        pass
-
-    # Выходим в главное меню
-    state = dp.current_state(user=msg.from_user.id)
-    await state.set_state(BotStates.HOME_STATE.state)
-    await start(msg)
 
 # Запуск бота
 if __name__ == '__main__':
