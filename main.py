@@ -210,6 +210,46 @@ async def acquaintance_for_user(msg: types.Message):
                    (msg.from_user.id, msg.text))
     conn.commit()
 
+    # Распределяем в команду для квеста
+    # Открываем JSON с информацией о командах для квеста
+    with open('./res/data/quest_commands.json',
+              'r', encoding='utf-8') as participants_of_events:
+        # Читаем файл
+        data = json.load(participants_of_events)
+
+    # Названеи последней в JSON-файле команды
+    last_team = list(data.items())[-1][0]
+
+    # Если она не заполнена
+    if len(data[last_team]) < 15:
+        # Добавляем туда нового пользователя
+        data[last_team].append(msg.from_user.id)
+
+        # И отправляем сообщение о распределении
+        await bot.send_message(
+            msg.from_user.id,
+            f"✅ Вы распределены в {last_team} для прохождения квеста!")
+    # А если заполнена
+    else:
+        # То создаем новую команду, добавляем туда нового пользователя
+        data[f"Команда #{len(data)+1}"] = [msg.from_user.id]
+
+        # Отпределяем название новой последней команды
+        last_team = list(data.items())[-1][0]
+
+        # И отправляем сообщение о распределении
+        await bot.send_message(
+            msg.from_user.id,
+            f"✅ Вы распределены в {last_team} для прохождения квеста!")
+
+    # Обновляем JSON-файл
+    with open('./res/data/quest_commands.json',
+              'w', encoding='utf-8') as quest_commands:
+        json.dump(data,
+                  quest_commands,
+                  indent=4,
+                  ensure_ascii=False)
+
     # Возвращаемся в главное меню
     state = dp.current_state(user=msg.from_user.id)
     await state.set_state(BotStates.START_STATE)
