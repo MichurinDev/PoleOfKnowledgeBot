@@ -218,7 +218,7 @@ async def acquaintance_for_user(msg: types.Message):
         data = json.load(quest_commands)
 
     # Если есть хотя бы одна команда
-    if len(data) > 1:
+    if len(data) > 0:
         # Название последней в JSON-файле команды
         last_team = list(data.items())[-1][0]
         # Если она не заполнена
