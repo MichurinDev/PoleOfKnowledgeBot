@@ -99,9 +99,9 @@ async def home(msg: types.Message):
     elif msg.text == buttons[2]:
         # Открываем JSON с информацией о командах для квеста
         with open('./res/data/quest_commands.json',
-                  'r', encoding='utf-8') as participants_of_events:
+                  'r', encoding='utf-8') as quest_commands:
             # Читаем файл
-            data = json.load(participants_of_events)
+            data = json.load(quest_commands)
 
         if not data:
             await bot\
@@ -110,7 +110,6 @@ async def home(msg: types.Message):
         else:
             send_message = ""
             for team in data:
-                send_message += f"\n\n{team}:"
                 # ФИО участников мерпориятия по ID: [ФИО1, ФИО2...]
                 ids_str = ','.join(list(map(str, data[team])))
                 teamers_list = \
@@ -118,9 +117,12 @@ async def home(msg: types.Message):
                      .execute(f''' SELECT name FROM UsersInfo
                               WHERE tg_id in ({ids_str})''').fetchall()]
 
+                # Формируем сообщение
+                send_message += f"\n\n{team} ({len(teamers_list)} человек):"
                 for user in teamers_list:
                     send_message += f"\n- {user}"
 
+            # Отправляем сообщение
             await bot.send_message(msg.from_user.id, send_message)
 
 

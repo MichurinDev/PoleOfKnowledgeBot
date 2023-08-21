@@ -213,23 +213,24 @@ async def acquaintance_for_user(msg: types.Message):
     # Распределяем в команду для квеста
     # Открываем JSON с информацией о командах для квеста
     with open('./res/data/quest_commands.json',
-              'r', encoding='utf-8') as participants_of_events:
+              'r', encoding='utf-8') as quest_commands:
         # Читаем файл
-        data = json.load(participants_of_events)
+        data = json.load(quest_commands)
 
-    # Названеи последней в JSON-файле команды
-    last_team = list(data.items())[-1][0]
+    # Если есть хотя бы одна команда
+    if len(data) > 1:
+        # Название последней в JSON-файле команды
+        last_team = list(data.items())[-1][0]
+        # Если она не заполнена
+        if len(data[last_team]) < 15:
+            # Добавляем туда нового пользователя
+            data[last_team].append(msg.from_user.id)
 
-    # Если она не заполнена
-    if len(data[last_team]) < 15:
-        # Добавляем туда нового пользователя
-        data[last_team].append(msg.from_user.id)
-
-        # И отправляем сообщение о распределении
-        await bot.send_message(
-            msg.from_user.id,
-            f"✅ Вы распределены в {last_team} для прохождения квеста!")
-    # А если заполнена
+            # И отправляем сообщение о распределении
+            await bot.send_message(
+                msg.from_user.id,
+                f"✅ Вы распределены в {last_team} для прохождения квеста!")
+    # А если свободных команд нет (не создана ни одна / заполнена крайняя)
     else:
         # То создаем новую команду, добавляем туда нового пользователя
         data[f"Команда #{len(data)+1}"] = [msg.from_user.id]
