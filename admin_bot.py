@@ -1,7 +1,7 @@
 # Импорты
-from notifiers import get_notifier
 from res.config_reader import config
 from res.reply_texts import *
+from res.SendNotify import send_notify
 
 from aiogram import Bot, types, Dispatcher, executor
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
@@ -28,6 +28,8 @@ class BotStates(StatesGroup):
 
     CHOICE_QUEST_ACTION_STATE = State()
 
+    CHOICE_EVENT_TO_SWITCH_ENTRY = State()
+
 
 # Объект бота
 bot = Bot(token=ADMIN_TOKEN)
@@ -42,16 +44,10 @@ cursor = conn.cursor()
 buttons = [
     'Отправить сообщение участникам форума',
     'Выгрузить список участников мероприятия',
-    'Список команд для квеста'
+    'Список команд для квеста',
+    'Рейтинг мероприятий',
+    'Открыть/закрыть запись на воркшопы'
 ]
-
-
-def send_notify(token: str, msg: str, chatId: int):
-    telegram = get_notifier('telegram')
-    telegram.notify(
-        token=token,
-        chat_id=chatId,
-        message=msg)
 
 
 # Хэндлер на команду /start
@@ -124,6 +120,40 @@ async def home(msg: types.Message):
 
             # Отправляем сообщение
             await bot.send_message(msg.from_user.id, send_message)
+    elif msg.text == buttons[3]:
+        events = cursor.execute(f''' SELECT title, scores FROM Events''')\
+            .fetchall()
+        send_text = "Рейтинги мероприятий:"
+        for event in events:
+            rating = round(sum(list(map(int, event[1].split(";")[:-1]))) /
+                           len(list(map(int, event[1].split(";")[:-1]))), 1)
+            send_text += f"\n- {event[0]}: {rating}/5.0"
+
+        await bot.send_message(msg.from_user.id, send_text)
+    elif msg.text == buttons[4]:
+        events = cursor.execute("SELECT title, entryIsOpen FROM Events")\
+            .fetchall()
+        send_text = "Выберите мероприятие:"
+        keyboard = ReplyKeyboardMarkup()
+
+        for event in events:
+            entry_emoj = None
+            if event[1] == 1:
+                entry_emoj = "✅"
+            else:
+                entry_emoj = "❌"
+
+            send_text += f"\n- {event[0]} - {entry_emoj}"
+            keyboard.add(KeyboardButton(event[0]))
+
+        keyboard.add("В главное меню")
+
+        await bot.send_message(msg.from_user.id,
+                               send_text,
+                               reply_markup=keyboard)
+
+        state = dp.current_state(user=msg.from_user.id)
+        await state.set_state(BotStates.CHOICE_EVENT_TO_SWITCH_ENTRY.state)
 
 
 # Отправка сообщений участникам форума от лица "клиентского" бота
@@ -197,6 +227,29 @@ async def get_parts_by_event_title(msg: types.Message):
     await state.set_state(BotStates.HOME_STATE.state)
     await start(msg)
 
+
+@dp.message_handler(state=BotStates.CHOICE_EVENT_TO_SWITCH_ENTRY)
+async def send_msg_to_users(msg: types.Message):
+    if msg.text != "В главное меню":
+        currentEntryIsOpen = cursor.execute('''SELECT entryIsOpen FROM
+                                            Events WHERE title=?''',
+                                            (msg.text,)).fetchall()[0][0]
+
+        if currentEntryIsOpen == 1:
+            cursor.execute('UPDATE Events SET entryIsOpen=? WHERE title=?',
+                           (0, msg.text))
+        elif currentEntryIsOpen == 0:
+            cursor.execute('UPDATE Events SET entryIsOpen=? WHERE title=?',
+                           (1, msg.text))
+        conn.commit()
+
+        await bot.send_message(msg.from_user.id,
+                               "Статус регистрации на воркшоп обновлён!")
+
+    # Выходим в главное меню
+    state = dp.current_state(user=msg.from_user.id)
+    await state.set_state(BotStates.HOME_STATE.state)
+    await start(msg)
 
 # Запуск бота
 if __name__ == '__main__':

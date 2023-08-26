@@ -1,6 +1,7 @@
 # Импорты
 from res.config_reader import config
 from res.reply_texts import *
+from res.SendNotify import send_notify
 
 from aiogram import Bot, types, Dispatcher, executor
 from aiogram.types import ParseMode, KeyboardButton, ReplyKeyboardMarkup
@@ -10,9 +11,11 @@ from aiogram.contrib.middlewares.logging import LoggingMiddleware
 
 import sqlite3
 import json
+from random import choice
 
 # Объект бота
-bot = Bot(token=config.bot_token.get_secret_value())
+TOKEN = config.bot_token.get_secret_value()
+bot = Bot(token=TOKEN)
 # Диспетчер
 dp = Dispatcher(bot, storage=MemoryStorage())
 dp.middleware.setup(LoggingMiddleware())
@@ -24,11 +27,11 @@ cursor = conn.cursor()
 # Временная переменная для передачи данных между чем-либо
 _temp = None
 
-# Ryjgrb vty. ,jnf
+# Кнопки главного меню
 buttons = [
-            'Расписание и направления',
-            'Запись на активности',
-            'Ваши мероприятия',
+            'Показать расписание',
+            'Записаться на воркшопы',
+            'Твои мероприятия',
             'Оценить мероприятие',
             'Связь с организаторами'
             ]
@@ -52,6 +55,15 @@ class BotStates(StatesGroup):
     CHOICE_FORUM_DATE_FOR_GET_MY_EVENTS = State()
 
 
+def getValueByTgID(table="UsersInfo", value_column="id", tgID=None):
+    if tgID:
+        return cursor.execute(f''' SELECT {value_column} FROM
+                              {table} WHERE tg_id=?''',
+                              (tgID,)).fetchall()[0][0]
+    else:
+        print("ERROR: Telegram ID is None")
+
+
 # Хэндлер на команду /start
 @dp.message_handler(commands=['start'])
 async def start(msg: types.Message):
@@ -72,14 +84,14 @@ async def start(msg: types.Message):
         # для зарегистрированного пользователя
         if msg.text == "/start":
             await bot.send_message(
-                msg.from_user.id, f"Здравствуйте, {users[0][1]}!")
+                msg.from_user.id, f"Привет-привет!")
 
         await bot.send_message(msg.from_user.id,
                                MENU_TEXT, reply_markup=keyboard)
         await state.set_state(BotStates.HOME_STATE.state)
 
     else:
-        # Отправляем текст с предложением ввести ФИО
+        # Отправляем текст с предложением ввести ID
         await bot.send_message(
             msg.from_user.id,
             START_TEXT,
@@ -113,7 +125,7 @@ async def reply_to_text_msg(msg: types.Message):
         # Отправляем сообщение
         await bot.send_message(
             msg.from_user.id,
-            "Выберите дату:",
+            "Выбери дату:",
             reply_markup=keyboard)
 
         # Переходим на выбора даты мерприятия
@@ -135,7 +147,12 @@ async def reply_to_text_msg(msg: types.Message):
         # Отправляем сообщение
         await bot.send_message(
             msg.from_user.id,
-            "Выберите дату:",
+            "На старт, внимание, регистрация! Скорее выбирай воркшоп, " +
+            "на который ты сегодня пойдешь. " +
+            "Поторопись, места разлетаются как аппетитные косточки!")
+        await bot.send_message(
+            msg.from_user.id,
+            "Выбери дату:",
             reply_markup=keyboard)
 
         # Переходим на выбора даты мерприятия
@@ -156,7 +173,7 @@ async def reply_to_text_msg(msg: types.Message):
         # Отправляем сообщение
         await bot.send_message(
             msg.from_user.id,
-            "Выберите дату:",
+            "Выбери дату:",
             reply_markup=keyboard)
 
         # Переходим на выбора даты мерприятия
@@ -177,26 +194,14 @@ async def reply_to_text_msg(msg: types.Message):
         # Отправляем сообщение
         await bot.send_message(
             msg.from_user.id,
-            "Выберите дату:",
+            "Выбери дату:",
             reply_markup=keyboard)
 
         # Переходим на выбора даты мерприятия
         state = dp.current_state(user=msg.from_user.id)
         await state.set_state(BotStates.CHOICE_FORUM_DATE_FOR_EVAL_STATE.state)
     elif msg.text == buttons[4]:
-        # Берем список организаторов
-        cursor.execute(f''' SELECT * FROM OrganizersInfo''')
-        orgaizers = cursor.fetchall()
-
-        # Формируем сообщение
-        send_text = "Организаторы:"
-        for org in orgaizers:
-            send_text += f"\n✅ {org[0]}\n" + \
-                    f"Телефон: {org[1]}\n" + \
-                    f"Telegram: {org[2]}\n"
-
-        # Отправляем
-        await bot.send_message(msg.from_user.id, send_text)
+        pass
     elif msg.text == "/start":
         await start(msg)
     elif msg.text == "/help":
@@ -205,56 +210,55 @@ async def reply_to_text_msg(msg: types.Message):
 
 @dp.message_handler(state=BotStates.ACQUAINTANCE_STATE)
 async def acquaintance_for_user(msg: types.Message):
-    # Добавляем нового пользователя
-    cursor.execute('INSERT INTO UsersInfo (tg_id, name) VALUES (?, ?)',
-                   (msg.from_user.id, msg.text))
-    conn.commit()
+    # Если пользователь с введёным ID существует
+    if cursor.execute('SELECT * FROM UsersInfo WHERE id=?', (msg.text,))\
+            .fetchall():
+        # Добавляем нового пользователя
+        cursor.execute('UPDATE UsersInfo SET tg_id=? WHERE id=?',
+                       (msg.from_user.id, msg.text))
+        conn.commit()
 
-    # Распределяем в команду для квеста
-    # Открываем JSON с информацией о командах для квеста
-    with open('./res/data/quest_commands.json',
-              'r', encoding='utf-8') as quest_commands:
-        # Читаем файл
-        data = json.load(quest_commands)
+        # Распределяем в команду для квеста
+        # Открываем JSON с информацией о командах для квеста
+        with open('./res/data/quest_commands.json',
+                  'r', encoding='utf-8') as quest_commands:
+            # Читаем файл
+            data = json.load(quest_commands)
 
-    # Если есть хотя бы одна команда
-    if len(data) > 0:
-        # Название последней в JSON-файле команды
-        last_team = list(data.items())[-1][0]
-        # Если она не заполнена
-        if len(data[last_team]) < 15:
+        # Получаем тип пользователя
+        user_type = cursor.execute(
+                f''' SELECT type FROM UsersInfo WHERE id=?''',
+                (msg.text)).fetchall()[0][0]
+
+        # Если пользователь - ученик
+        if user_type == "Ученик":
+            # Получаем название команды
+            team_name = sorted(data, key=lambda s: len(data[s]))[0]
             # Добавляем туда нового пользователя
-            data[last_team].append(msg.from_user.id)
+            data[team_name].append(msg.from_user.id)
 
             # И отправляем сообщение о распределении
             await bot.send_message(
                 msg.from_user.id,
-                f"✅ Вы распределены в {last_team} для прохождения квеста!")
-    # А если свободных команд нет (не создана ни одна / заполнена крайняя)
+                'Кррррутяк! Я от радости даже начал вилять своим ' +
+                f'электронным хвостом! Теперь ты в команде {team_name}. ' +
+                'Тебе выдадут браслет с цветом твоей команды.')
+
+            # Обновляем JSON-файл
+            with open('./res/data/quest_commands.json',
+                      'w', encoding='utf-8') as quest_commands:
+                json.dump(data,
+                          quest_commands,
+                          indent=4,
+                          ensure_ascii=False)
+
+        # Возвращаемся в главное меню
+        state = dp.current_state(user=msg.from_user.id)
+        await state.set_state(BotStates.START_STATE)
+        await start(msg)
+    # А если не существует
     else:
-        # То создаем новую команду, добавляем туда нового пользователя
-        data[f"Команда #{len(data)+1}"] = [msg.from_user.id]
-
-        # Отпределяем название новой последней команды
-        last_team = list(data.items())[-1][0]
-
-        # И отправляем сообщение о распределении
-        await bot.send_message(
-            msg.from_user.id,
-            f"✅ Вы распределены в {last_team} для прохождения квеста!")
-
-    # Обновляем JSON-файл
-    with open('./res/data/quest_commands.json',
-              'w', encoding='utf-8') as quest_commands:
-        json.dump(data,
-                  quest_commands,
-                  indent=4,
-                  ensure_ascii=False)
-
-    # Возвращаемся в главное меню
-    state = dp.current_state(user=msg.from_user.id)
-    await state.set_state(BotStates.START_STATE)
-    await start(msg)
+        await bot.send_message(msg.from_user.id, ID_ERROR_TEXT)
 
 
 @dp.message_handler(state=BotStates.CHOICE_FORUM_DATE_STATE)
@@ -269,23 +273,20 @@ async def send_events_list(msg: types.Message):
         events = cursor.execute(f''' SELECT * FROM Events WHERE date=?''',
                                 (msg.text,)).fetchall()
 
-        send_text = f"Программа форума на {msg.text}:"
+        send_text = ""
         for event in events:
-            # Получаем оценки мероприятия
-            scores = list(map(int, event[6].split(';')[:-1]))
-            # Получаем рейтинг мероприятия
-            rating = round(sum(scores) / len(scores), 1)
-
             send_text += f"\n✅ {event[0]}\n" + \
                 f"Описание: {event[1]}\n" + \
                 f"Время: {event[3]} - {event[4]}\n" + \
                 f"Место: {event[5]}\n" + \
-                f"Рейтинг: {rating}/5.0\n" + \
                 f"Количество мест: {event[7] - event[8]}/{event[7]}\n"
 
         # Если мероприятия найдены
-        if send_text != f"Программа форума на {msg.text}:":
+        if send_text != "":
             # Отправляем программу форума на выбранный день
+            await bot.send_message(
+                msg.from_user.id,
+                choice(TIMETABLE_TITLE_TEXTS))
             await bot.send_message(msg.from_user.id, send_text)
 
             # Выходим в главное меню
@@ -308,7 +309,7 @@ async def choice_event_data(msg: types.Message):
 
         # Если мероприятия найдены
         if events:
-            send_text = f"Выберите мероприятие:\n"
+            send_text = f"Выбери мероприятие:\n"
             keyboard = ReplyKeyboardMarkup()
 
             for event in events:
@@ -420,10 +421,11 @@ async def score_event(msg: types.Message):
 async def score_event(msg: types.Message):
     if msg.text != "В главное меню":
         # Берем все мероприятия за введённую дату
-        events = cursor.execute(f''' SELECT * FROM Events WHERE date=?''',
-                                (msg.text,)).fetchall()
+        events = cursor.execute(f''' SELECT * FROM Events WHERE date=? AND
+                                entryIsOpen = ?''',
+                                (msg.text, 1)).fetchall()
 
-        send_text = "Выберите мероприятие:\n"
+        send_text = "Выбери мероприятие:\n"
         keyboard = ReplyKeyboardMarkup()
 
         # Читаем JSON-файл с участниками мероприятий
@@ -432,16 +434,14 @@ async def score_event(msg: types.Message):
             # Читаем файл
             data = json.load(participants_of_events)
 
+        user_id = getValueByTgID(tgID=msg.from_user.id)
         for event in events:
             # Если мероприятие есть в JSON-файле и
             # на него не зарегистрирован пользователь
             # или если мероприятия нет в JSON-файле
             if (event[0] in data and
-                msg.from_user.id not in data[event[0]]) or \
+                user_id not in data[event[0]]) or \
                     (event[0] not in data):
-
-                # Добавляем название в список мероприятий
-                send_text += f"{event[0]}\n"
 
                 # Формируем клавиатуру со списком мероприятий
                 keyboard.add(KeyboardButton(event[0]))
@@ -449,7 +449,7 @@ async def score_event(msg: types.Message):
         keyboard.add(KeyboardButton("В главное меню"))
 
         # Если найдены доступные к регистрации мероприятия
-        if send_text != "Выберите мероприятие:\n":
+        if send_text != "Выбери мероприятие:":
             # Отправляем список мероприятий на выбранный день
             await bot.send_message(msg.from_user.id,
                                    send_text,
@@ -474,8 +474,9 @@ async def score_event(msg: types.Message):
 async def score_event(msg: types.Message):
     if msg.text != "В главное меню":
         # Если такое мепроприятие существует
-        if cursor.execute(f''' SELECT * FROM Events WHERE title = ?''',
-                          (msg.text,)).fetchall():
+        if cursor.execute(f''' SELECT * FROM Events WHERE title = ? AND
+                          entryIsOpen = ?''',
+                          (msg.text, 1)).fetchall():
             # Открываем JSON со структурой
             # Мероприятие: [участник 1, участник 2...]
             with open('./res/data/participants_of_events.json',
@@ -483,13 +484,16 @@ async def score_event(msg: types.Message):
                 # Читаем файл
                 data = json.load(participants_of_events)
 
+            # Получаем ID пльзователя
+            user_id = getValueByTgID("UsersInfo", "id", msg.from_user.id)
+
             # Добавляем участника на мероприятие,
             # если на это мероприятие уже кто-то регистрировался
             if msg.text in data:
-                data[msg.text].append(msg.from_user.id)
+                data[msg.text].append(user_id)
             # И если нет
             else:
-                data[msg.text] = [msg.from_user.id]
+                data[msg.text] = [user_id]
 
             # Обновляем JSON-файл
             with open('./res/data/participants_of_events.json',
@@ -517,6 +521,25 @@ async def score_event(msg: types.Message):
                                    "Вы успешно зарегистрировались " +
                                    f"на мероприятие \"{msg.text}\"")
 
+            # Рассылаем уведомление о количестве мест,
+            # если места на мероприятие заполнено на 75%
+            maxtParticipantsCounter = \
+                cursor.execute(f''' SELECT maxParticipants FROM Events
+                               WHERE title = ?''',
+                               (msg.text,)).fetchall()[0][0]
+
+            if currentParticipantsCounter / \
+                    maxtParticipantsCounter * 100 >= 75:
+                users_tg_id = cursor.execute("""SELECT tg_id FROM UsersInfo
+                                             WHERE tg_id <> ?""", ("None",))\
+                                                .fetchall()
+
+                for user_tg_id in users_tg_id:
+                    if user_tg_id[0] != msg.from_user.id:
+                        send_notify(TOKEN,
+                                    PLACE_FOR_WORKSHOP_ENDS,
+                                    user_tg_id[0])
+
             # Переходим в главное меню
             state = dp.current_state(user=msg.from_user.id)
             await state.set_state(BotStates.START_STATE)
@@ -539,7 +562,8 @@ async def score_event(msg: types.Message):
         # Берём список мероприятий за выбранный день
         events_by_date = \
             cursor.execute(f''' SELECT * FROM Events
-                            WHERE date = ?''', (msg.text,)).fetchall()
+                           WHERE date = ?''',
+                           (msg.text,)).fetchall()
 
         send_text = f"Ваши мероприятия на {msg.text}:"
         # Открываем JSON со структурой Мероприятие: [участник 1, участник 2...]
@@ -558,17 +582,11 @@ async def score_event(msg: types.Message):
                 # Если ID пользователя уже добавлен в список участников
                 # этого мероприятия
                 if msg.from_user.id in data[event_title]:
-                    # Получаем оценки мероприятия
-                    scores = list(map(int, event[6].split(';')[:-1]))
-                    # Получаем рейтинг мероприятия
-                    rating = round(sum(scores) / len(scores), 1)
-
                     # Формируем сообщение
                     send_text += f"\n✅ {event[0]}\n" + \
                         f"Описание: {event[1]}\n" + \
                         f"Время: {event[3]} - {event[4]}\n" + \
-                        f"Место: {event[5]}\n" + \
-                        f"Рейтинг: {rating}/5.0\n"
+                        f"Место: {event[5]}\n"
 
         # Если найдены мероприятия
         if send_text != f"Ваши мероприятия на {msg.text}:":
