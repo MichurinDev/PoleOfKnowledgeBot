@@ -15,6 +15,8 @@ from random import choice
 
 # Объект бота
 TOKEN = config.bot_token.get_secret_value()
+ADMIN_TOKEN = config.admin_bot_token.get_secret_value()
+
 bot = Bot(token=TOKEN)
 # Диспетчер
 dp = Dispatcher(bot, storage=MemoryStorage())
@@ -55,6 +57,8 @@ class BotStates(StatesGroup):
     CHOICE_EVENT_SING_UP_FOR_EVENT = State()
 
     CHOICE_FORUM_DATE_FOR_GET_MY_EVENTS = State()
+
+    SEND_MSG_TO_SUPPORT = State()
 
 
 def getValueByTgID(table="UsersInfo", value_column="id", tgID=None):
@@ -105,7 +109,7 @@ async def start(msg: types.Message):
             START_TEXT,
             parse_mode=ParseMode.MARKDOWN)
 
-        # Переходим на стадию ввода ФИО
+        # Переходим на стадию ввода ID
         await bot.send_message(msg.from_user.id, ACQUAINTANCE_TEXT)
         await state.set_state(BotStates.ACQUAINTANCE_STATE.state)
 
@@ -215,7 +219,11 @@ async def reply_to_text_msg(msg: types.Message):
         state = dp.current_state(user=msg.from_user.id)
         await state.set_state(BotStates.CHOICE_FORUM_DATE_FOR_EVAL_STATE.state)
     elif msg.text == buttons[5]:
-        pass
+        await bot.send_message(msg.from_user.id, SUPPORT_TEXT)
+
+        # Переходим на стадию отправки сообщения поддержке
+        state = dp.current_state(user=msg.from_user.id)
+        await state.set_state(BotStates.SEND_MSG_TO_SUPPORT.state)
     elif msg.text == "/start":
         await start(msg)
     elif msg.text == "/help":
@@ -247,10 +255,15 @@ async def acquaintance_for_user(msg: types.Message):
 
         # Если пользователь - ученик
         if user_type == "Ученик":
+            user_city = cursor.execute(f'''SELECT city FROM
+                                       UsersInfo WHERE id=?''',
+                                       (msg.text,)).fetchall()[0][0]
             # Получаем название команды
-            team_name = sorted(data, key=lambda s: len(data[s]))[0]
+            teams = data[user_city]
+            team_name = sorted(teams,
+                               key=lambda s: len(teams[s]))[0]
             # Добавляем туда нового пользователя
-            data[team_name].append(msg.from_user.id)
+            data[user_city][team_name].append(msg.text)
 
             # И отправляем сообщение о распределении
             await bot.send_message(
@@ -552,8 +565,8 @@ async def score_event(msg: types.Message):
             if currentParticipantsCounter / \
                     maxtParticipantsCounter * 100 >= 75:
                 users_tg_id = cursor.execute("""SELECT tg_id FROM UsersInfo
-                                             WHERE tg_id <> ?""", ("None",))\
-                                                .fetchall()
+                                             WHERE tg_id <> ? AND city=?""",
+                                             ("None", user_city)).fetchall()
 
                 for user_tg_id in users_tg_id:
                     if user_tg_id[0] != msg.from_user.id:
@@ -626,7 +639,44 @@ async def score_event(msg: types.Message):
     await state.set_state(BotStates.START_STATE)
     await start(msg)
 
+
+@dp.message_handler(state=BotStates.SEND_MSG_TO_SUPPORT)
+async def score_event(msg: types.Message):
+    last_msg_id = cursor.execute('''SELECT id FROM MsgToSupport''')\
+        .fetchall()[-1][0]
+    cursor.execute(f'''INSERT INTO MsgToSupport
+                   (id, user_id, tg_id, name, city, message)
+                   VALUES (?, ?, ?, ?, ?, ?)''',
+                   (
+                    last_msg_id + 1,
+                    getValueByTgID(tgID=msg.from_user.id),
+                    msg.from_user.id,
+                    getValueByTgID(value_column="name",
+                                   tgID=msg.from_user.id),
+                    user_city,
+                    msg.text
+                    ))
+    conn.commit()
+
+    support_users_tg_id = cursor.execute(f'''SELECT tg_id FROM UsersInfo
+                                   WHERE type in ("Администратор", "Волонтёр")
+                                   AND city=?''', (user_city,)).fetchall()
+
+    for support_user_tg_id in support_users_tg_id:
+        if support_user_tg_id[0]:
+            send_notify(ADMIN_TOKEN,
+                        "Пришло новое сообщение в поддержку!",
+                        support_user_tg_id[0])
+
+    await bot.send_message(msg.from_user.id, "Сообщение отправлено!")
+
+    # Переходим в главное меню
+    state = dp.current_state(user=msg.from_user.id)
+    await state.set_state(BotStates.START_STATE)
+    await start(msg)
+
+
 # Запуск бота
 if __name__ == '__main__':
     print("Бот запущен...")
-    executor.start_polling(dp)
+    executor.start_polling(dp, skip_updates=False)
