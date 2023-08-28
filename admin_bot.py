@@ -7,7 +7,7 @@ from aiogram import Bot, types, Dispatcher, executor
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.contrib.middlewares.logging import LoggingMiddleware
 from aiogram.dispatcher.filters.state import State, StatesGroup
-from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types import KeyboardButton, ReplyKeyboardMarkup, ParseMode
 
 import sqlite3
 import json
@@ -131,8 +131,9 @@ async def acquaintance(msg: types.Message):
 async def home(msg: types.Message):
     if msg.text == buttons[0]:
         if user_type in ['Администратор']:
-            keyboard = ReplyKeyboardMarkup().\
-                add(KeyboardButton("В главное меню"))
+            keyboard = ReplyKeyboardMarkup()\
+                .add(KeyboardButton("Шаблоны"))\
+                .add(KeyboardButton("В главное меню"))
             await bot.send_message(msg.from_user.id, "Введите сообщение:",
                                    reply_markup=keyboard)
 
@@ -296,23 +297,33 @@ async def home(msg: types.Message):
 @dp.message_handler(state=BotStates.SEND_MESSAGE_STATE)
 async def send_msg_to_users(msg: types.Message):
     if msg.text != "В главное меню":
-        # Список ID зарегистрированных пользователей
-        users = cursor.execute('''SELECT tg_id FROM UsersInfo WHERE city=?''',
-                               (user_city,)).fetchall()
+        if msg.text != "Шаблоны":
+            # Список ID зарегистрированных пользователей
+            users = cursor.execute('''SELECT tg_id FROM UsersInfo
+                                   WHERE city=?''',
+                                   (user_city,)).fetchall()
 
-        await bot.send_message(msg.from_user.id, "Отправка...")
+            await bot.send_message(msg.from_user.id, "Отправка...")
 
-        # Перебираем ID зарегистрированных пользоателей
-        for user in users:
-            # Отправляем сообщение пользователю
-            send_notify(token=TOKEN, msg=msg.text, chatId=user[0])
+            # Перебираем ID зарегистрированных пользоателей
+            for user in users:
+                # Отправляем сообщение пользователю
+                send_notify(token=TOKEN, msg=msg.text, chatId=user[0])
 
-        await bot.send_message(msg.from_user.id, "Сообщение отправлено!")
+            await bot.send_message(msg.from_user.id, "Сообщение отправлено!")
 
-    # Выходим в главное меню
-    state = dp.current_state(user=msg.from_user.id)
-    await state.set_state(BotStates.HOME_STATE.state)
-    await start(msg)
+            # Выходим в главное меню
+            state = dp.current_state(user=msg.from_user.id)
+            await state.set_state(BotStates.HOME_STATE.state)
+            await start(msg)
+        else:
+            await bot.send_message(msg.from_user.id, NOTIFY_PATTERN_TEXT,
+                                   parse_mode=ParseMode.HTML)
+    else:
+        # Выходим в главное меню
+        state = dp.current_state(user=msg.from_user.id)
+        await state.set_state(BotStates.HOME_STATE.state)
+        await start(msg)
 
 
 @dp.message_handler(state=BotStates.CHOICE_EVENT_STATE)
@@ -392,20 +403,24 @@ async def send_msg_to_users(msg: types.Message):
 
     if msg.text != "В главное меню":
         message = cursor.execute('''SELECT message FROM MsgToSupport
-                                 WHERE id=?''', (msg.text,)).fetchall()[0][0]
-        send_text = f"Сообщение:\n{message}"
+                                 WHERE id=?''', (msg.text,)).fetchall()
+        if message:
+            message = message[0][0]
+            send_text = f"Сообщение:\n{message}"
 
-        _temp = msg.text
+            _temp = msg.text
 
-        await bot.send_message(msg.from_user.id, send_text)
+            await bot.send_message(msg.from_user.id, send_text)
 
-        keyboard = ReplyKeyboardMarkup().add("В главное меню")
-        await bot.send_message(msg.from_user.id,
-                               "Отправьте ответное сообщение:",
-                               reply_markup=keyboard)
+            keyboard = ReplyKeyboardMarkup().add("В главное меню")
+            await bot.send_message(msg.from_user.id,
+                                   "Отправьте ответное сообщение:",
+                                   reply_markup=keyboard)
 
-        state = dp.current_state(user=msg.from_user.id)
-        await state.set_state(BotStates.SEND_REPLY_TO_SUPPORT_MSG.state)
+            state = dp.current_state(user=msg.from_user.id)
+            await state.set_state(BotStates.SEND_REPLY_TO_SUPPORT_MSG.state)
+        else:
+            await bot.send_message(msg.from_user.id, "Обращение не найдено")
     else:
         # Выходим в главное меню
         state = dp.current_state(user=msg.from_user.id)
