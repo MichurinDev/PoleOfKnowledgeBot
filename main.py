@@ -32,13 +32,14 @@ user_city = ""
 
 # Кнопки главного меню
 buttons = [
-            'Показать расписание',
-            'Записаться на воркшопы',
-            'Твои мероприятия',
-            'Награды',
-            'Оценить мероприятие',
-            'Связь с организаторами'
-            ]
+    'Карта площадки',
+    'Показать расписание',
+    'Записаться на воркшопы',
+    'Твои мероприятия',
+    'Награды',
+    'Оценить мероприятие',
+    'Связь с организаторами'
+]
 
 
 # Состояния бота
@@ -124,101 +125,131 @@ async def help(msg: types.Message):
 @dp.message_handler(state=BotStates.HOME_STATE)
 async def reply_to_text_msg(msg: types.Message):
     if msg.text == buttons[0]:
-        # Берём даты, на которые назначены мероприятия
-        cursor.execute(f''' SELECT date FROM Events WHERE city=?''',
-                       (user_city,))
-        dates = set([i[0] for i in cursor.fetchall()])
-
-        # Формируем клавиатуру
-        keyboard = ReplyKeyboardMarkup()
-        for date in dates:
-            keyboard.add(KeyboardButton(date))
-        keyboard.add(KeyboardButton("В главное меню"))
-
-        # Отправляем сообщение
-        await bot.send_message(
-            msg.from_user.id,
-            "Выбери дату:",
-            reply_markup=keyboard)
-
-        # Переходим на выбора даты мерприятия
-        state = dp.current_state(user=msg.from_user.id)
-        await state.set_state(BotStates.CHOICE_FORUM_DATE_STATE.state)
+        pass
     elif msg.text == buttons[1]:
-        # Берём даты, на которые назначены мероприятия
-        cursor.execute(f''' SELECT date FROM Events WHERE city=?''',
-                       (user_city,))
-        dates = set([i[0] for i in cursor.fetchall()])
+        # Берем все мероприятия за введённую дату
+        events = cursor.execute(f''' SELECT title, description, start, end,
+                                place, currentParticipants, maxParticipants
+                                FROM Events WHERE city=?''',
+                                (user_city,)).fetchall()
 
-        # Формируем клавиатуру
-        keyboard = ReplyKeyboardMarkup()
-        for date in dates:
-            keyboard.add(KeyboardButton(date))
+        send_text = ""
+        for event in events:
+            send_text += f"\n✅ {event[0]}\n" + \
+                f"Описание: {event[1]}\n" + \
+                f"Время: {event[2]} - {event[3]}\n" + \
+                f"Место: {event[4]}\n" + \
+                f"Количество мест: {event[6] - event[5]}/{event[6]}\n"
 
-        # Добавляем кнопку выхода в главное меню
-        keyboard.add(KeyboardButton("В главное меню"))
-
-        # Отправляем сообщение
-        await bot.send_message(
-            msg.from_user.id,
-            "На старт, внимание, регистрация! Скорее выбирай воркшоп, " +
-            "на который ты сегодня пойдешь. " +
-            "Поторопись, места разлетаются как аппетитные косточки!")
-        await bot.send_message(
-            msg.from_user.id,
-            "Выбери дату:",
-            reply_markup=keyboard)
-
-        # Переходим на выбора даты мерприятия
-        state = dp.current_state(user=msg.from_user.id)
-        await state.set_state(
-            BotStates.CHOICE_FORUM_DATE_FOR_SING_UP_FOR_EVENT.state)
+        await bot.send_message(msg.from_user.id, send_text)
     elif msg.text == buttons[2]:
-        # Берём даты, на которые назначены мероприятия
-        cursor.execute(f''' SELECT date FROM Events WHERE city=?''',
-                       (user_city,))
-        dates = set([i[0] for i in cursor.fetchall()])
+        # Берем все мероприятия в городе
+        events = cursor.execute(f''' SELECT * FROM Events WHERE
+                                entryIsOpen=? AND city=?''',
+                                (1, user_city)).fetchall()
 
-        # Формируем клавиатуру
+        send_text = "Выбери мероприятие:\n"
         keyboard = ReplyKeyboardMarkup()
-        for date in dates:
-            keyboard.add(KeyboardButton(date))
+
+        # Читаем JSON-файл с участниками мероприятий
+        with open('./res/data/participants_of_events.json',
+                  'r', encoding='utf-8') as participants_of_events:
+            # Читаем файл
+            data = json.load(participants_of_events)
+
+        user_id = getValueByTgID(tgID=msg.from_user.id)
+        for event in events:
+            # Если мероприятие есть в JSON-файле и
+            # на него не зарегистрирован пользователь
+            # или если мероприятия нет в JSON-файле
+            if (event[0] in data and
+                user_id not in data[event[0]]) or \
+                    (event[0] not in data):
+
+                # Формируем клавиатуру со списком мероприятий
+                keyboard.add(KeyboardButton(event[0]))
+
         keyboard.add(KeyboardButton("В главное меню"))
 
-        # Отправляем сообщение
-        await bot.send_message(
-            msg.from_user.id,
-            "Выбери дату:",
-            reply_markup=keyboard)
+        # Если найдены доступные к регистрации мероприятия
+        if send_text != "Выбери мероприятие:":
+            # Отправляем список мероприятий на выбранный день
+            await bot.send_message(msg.from_user.id,
+                                   send_text,
+                                   reply_markup=keyboard)
 
-        # Переходим на выбора даты мерприятия
-        state = dp.current_state(user=msg.from_user.id)
-        await state.set_state(
-            BotStates.CHOICE_FORUM_DATE_FOR_GET_MY_EVENTS.state)
+            # Переходим на этап выбора мероприятия
+            state = dp.current_state(user=msg.from_user.id)
+            await state.set_state(BotStates.CHOICE_EVENT_SING_UP_FOR_EVENT)
     elif msg.text == buttons[3]:
-        await bot.send_message(msg.from_user.id, "Текст про награды")
+        # Берём список мероприятий в городе
+        events_by_date = cursor.execute(f''' SELECT * FROM Events WHERE
+                                        city=?''', (user_city,)).fetchall()
+
+        send_text = "Воркшопы, на которые ты зарегистрирован:"
+        # Открываем JSON со структурой Мероприятие: [участник 1, участник 2...]
+        with open('./res/data/participants_of_events.json',
+                  'r', encoding='utf-8') as participants_of_events:
+            # Читаем файл
+            data = json.load(participants_of_events)
+
+        # Перебираем мероприятия за этот день
+        for event in events_by_date:
+            # Берем его название
+            event_title = event[0]
+
+            # Если это название уже есть в JSON
+            if event_title in data:
+                # Если ID пользователя уже добавлен в список участников
+                # этого мероприятия
+                if getValueByTgID(tgID=msg.from_user.id) in data[event_title]:
+                    # Формируем сообщение
+                    send_text += f"\n✅ {event[0]}\n" + \
+                        f"Описание: {event[1]}\n" + \
+                        f"Время: {event[3]} - {event[4]}\n" + \
+                        f"Место: {event[5]}\n"
+
+        # Если найдены мероприятия
+        if send_text != "Воркшопы, на которые ты зарегистрирован:":
+            # Отправляем сообщение со списком мероприятий,
+            # где зарегистрирован пользователь
+            await bot.send_message(msg.from_user.id, send_text)
+        # А если не найдены
+        else:
+            await bot.send_message(msg.from_user.id,
+                                   f"Твои мероприятия на {msg.text}" +
+                                   " не найдены! Пройди регистрацию " +
+                                   " на воркшопы, походящие в данный день.")
     elif msg.text == buttons[4]:
-        # Берём даты, на которые назначены мероприятия
-        cursor.execute(f''' SELECT date FROM Events WHERE city=?''',
-                       (user_city,))
-        dates = set([i[0] for i in cursor.fetchall()])
-
-        # Формируем клавиатуру
-        keyboard = ReplyKeyboardMarkup()
-        for date in dates:
-            keyboard.add(KeyboardButton(date))
-        keyboard.add(KeyboardButton("В главное меню"))
-
-        # Отправляем сообщение
-        await bot.send_message(
-            msg.from_user.id,
-            "Выбери дату:",
-            reply_markup=keyboard)
-
-        # Переходим на выбора даты мерприятия
-        state = dp.current_state(user=msg.from_user.id)
-        await state.set_state(BotStates.CHOICE_FORUM_DATE_FOR_EVAL_STATE.state)
+        await bot.send_message(msg.from_user.id, "Текст про награды")
     elif msg.text == buttons[5]:
+        # Берем все мероприятия в городе
+        events = cursor.execute(f''' SELECT * FROM Events WHERE city=?''',
+                                (user_city,)).fetchall()
+
+        # Если мероприятия найдены
+        if events:
+            send_text = f"Выбери мероприятие:\n"
+            keyboard = ReplyKeyboardMarkup()
+
+            for event in events:
+                # Формируем клавиатуру со списком мероприятий
+                keyboard.add(KeyboardButton(event[0]))
+            keyboard.add(KeyboardButton("В главное меню"))
+
+            # Отправляем список мероприятий на выбранный день
+            await bot.send_message(msg.from_user.id,
+                                   send_text,
+                                   reply_markup=keyboard)
+
+            # Переходим на этап выбора мероприятия
+            state = dp.current_state(user=msg.from_user.id)
+            await state.set_state(BotStates.CHOICE_EVENT_STATE)
+        # И если не найдены
+        else:
+            await bot.send_message(msg.from_user.id,
+                                   "Мероприятий в данный день нет!")
+    elif msg.text == buttons[6]:
         await bot.send_message(msg.from_user.id, SUPPORT_TEXT)
 
         # Переходим на стадию отправки сообщения поддержке
@@ -289,85 +320,6 @@ async def acquaintance_for_user(msg: types.Message):
         await bot.send_message(msg.from_user.id, ID_ERROR_TEXT)
 
 
-@dp.message_handler(state=BotStates.CHOICE_FORUM_DATE_STATE)
-async def send_events_list(msg: types.Message):
-    if msg.text == "В главное меню":
-        # Выходим в главное меню
-        state = dp.current_state(user=msg.from_user.id)
-        await state.set_state(BotStates.START_STATE)
-        await start(msg)
-    else:
-        # Берем все мероприятия за введённую дату
-        events = cursor.execute(f''' SELECT * FROM Events WHERE date=?
-                                AND city=?''',
-                                (msg.text, user_city)).fetchall()
-
-        send_text = ""
-        for event in events:
-            send_text += f"\n✅ {event[0]}\n" + \
-                f"Описание: {event[1]}\n" + \
-                f"Время: {event[3]} - {event[4]}\n" + \
-                f"Место: {event[5]}\n" + \
-                f"Количество мест: {event[7] - event[8]}/{event[7]}\n"
-
-        # Если мероприятия найдены
-        if send_text != "":
-            # Отправляем программу форума на выбранный день
-            await bot.send_message(
-                msg.from_user.id,
-                choice(TIMETABLE_TITLE_TEXTS))
-            await bot.send_message(msg.from_user.id, send_text)
-
-            # Выходим в главное меню
-            state = dp.current_state(user=msg.from_user.id)
-            await state.set_state(BotStates.START_STATE)
-            await start(msg)
-        # А если нет мероприятий в выбранную дату
-        else:
-            await bot.send_message(msg.from_user.id,
-                                   "На выбранный день " +
-                                   "нет мероприятий")
-
-
-@dp.message_handler(state=BotStates.CHOICE_FORUM_DATE_FOR_EVAL_STATE)
-async def choice_event_data(msg: types.Message):
-    if msg.text != "В главное меню":
-        # Берем все мероприятия за введённую дату
-        events = cursor.execute(f''' SELECT * FROM Events WHERE date=?
-                                AND city=?''',
-                                (msg.text, user_city)).fetchall()
-
-        # Если мероприятия найдены
-        if events:
-            send_text = f"Выбери мероприятие:\n"
-            keyboard = ReplyKeyboardMarkup()
-
-            for event in events:
-                # Добавляем название в список мероприятий
-                send_text += f"{event[0]}\n"
-                # Формируем клавиатуру со списком мероприятий
-                keyboard.add(KeyboardButton(event[0]))
-            keyboard.add(KeyboardButton("В главное меню"))
-
-            # Отправляем список мероприятий на выбранный день
-            await bot.send_message(msg.from_user.id,
-                                   send_text,
-                                   reply_markup=keyboard)
-
-            # Переходим на этап выбора мероприятия
-            state = dp.current_state(user=msg.from_user.id)
-            await state.set_state(BotStates.CHOICE_EVENT_STATE)
-        # И если не найдены
-        else:
-            await bot.send_message(msg.from_user.id,
-                                   "Мероприятий в данный день нет!")
-    else:
-        # Выходим в главное меню
-        state = dp.current_state(user=msg.from_user.id)
-        await state.set_state(BotStates.START_STATE)
-        await start(msg)
-
-
 @dp.message_handler(state=BotStates.CHOICE_EVENT_STATE)
 async def choice_event(msg: types.Message):
     global _temp
@@ -395,7 +347,21 @@ async def choice_event(msg: types.Message):
             # Отправляем сообщение
             await bot.send_message(
                 msg.from_user.id,
-                "Поставьте оценку мероприятию по шкале от 1 до 5:",
+                choice([
+                    "Псссс… я тут слежу за порядком и качеством. Скажи, тебе" +
+                    " понравилась эта площадка? Пройди, пожалуйста," +
+                    " небольшой опрос.",
+
+                    "Как здорово, что ты побывал тут! Расскажи о " +
+                    "своих впечатлениях",
+
+                    f"Ну что, {getValueByTgID(value_column='name',
+                                              tgID=msg.from_user.id)}, " +
+                    "как все прошло? Поделишься со мной эмоциями?",
+
+                    "Эх, я совсем не успеваю сегодня обойти все площадки..." +
+                    f" Расскажи мне, тебе понравилось на {msg.text}?"
+                ]),
                 reply_markup=keyboard)
 
             # Переходим на этап оценивания
@@ -427,10 +393,7 @@ async def score_event(msg: types.Message):
             conn.commit()
 
             # Отправляем сообщение
-            await bot.send_message(
-                msg.from_user.id,
-                f"Оценка \"{msg.text}\" мероприятию " +
-                f"\"{_temp[0]}\" поставлена!")
+            await bot.send_message(msg.from_user.id, "Гав! Спасибо за оценку!")
 
             # "Обнуляем" временную переменную
             _temp = None
@@ -445,59 +408,6 @@ async def score_event(msg: types.Message):
             await bot.send_message(msg.from_user.id, "Неверное значение!")
     else:
         # Выходим в главное меню
-        state = dp.current_state(user=msg.from_user.id)
-        await state.set_state(BotStates.START_STATE)
-        await start(msg)
-
-
-@dp.message_handler(state=BotStates.CHOICE_FORUM_DATE_FOR_SING_UP_FOR_EVENT)
-async def score_event(msg: types.Message):
-    if msg.text != "В главное меню":
-        # Берем все мероприятия за введённую дату
-        events = cursor.execute(f''' SELECT * FROM Events WHERE date=? AND
-                                entryIsOpen=? AND city=?''',
-                                (msg.text, 1, user_city)).fetchall()
-
-        send_text = "Выбери мероприятие:\n"
-        keyboard = ReplyKeyboardMarkup()
-
-        # Читаем JSON-файл с участниками мероприятий
-        with open('./res/data/participants_of_events.json',
-                  'r', encoding='utf-8') as participants_of_events:
-            # Читаем файл
-            data = json.load(participants_of_events)
-
-        user_id = getValueByTgID(tgID=msg.from_user.id)
-        for event in events:
-            # Если мероприятие есть в JSON-файле и
-            # на него не зарегистрирован пользователь
-            # или если мероприятия нет в JSON-файле
-            if (event[0] in data and
-                user_id not in data[event[0]]) or \
-                    (event[0] not in data):
-
-                # Формируем клавиатуру со списком мероприятий
-                keyboard.add(KeyboardButton(event[0]))
-
-        keyboard.add(KeyboardButton("В главное меню"))
-
-        # Если найдены доступные к регистрации мероприятия
-        if send_text != "Выбери мероприятие:":
-            # Отправляем список мероприятий на выбранный день
-            await bot.send_message(msg.from_user.id,
-                                   send_text,
-                                   reply_markup=keyboard)
-
-            # Переходим на этап выбора мероприятия
-            state = dp.current_state(user=msg.from_user.id)
-            await state.set_state(BotStates.CHOICE_EVENT_SING_UP_FOR_EVENT)
-        # И если нет
-        else:
-            await bot.send_message(msg.from_user.id,
-                                   "На выбранный день " +
-                                   "нет доступных мероприятий")
-    else:
-        # Переходим в главное меню
         state = dp.current_state(user=msg.from_user.id)
         await state.set_state(BotStates.START_STATE)
         await start(msg)
@@ -590,60 +500,13 @@ async def score_event(msg: types.Message):
         await start(msg)
 
 
-@dp.message_handler(state=BotStates.CHOICE_FORUM_DATE_FOR_GET_MY_EVENTS)
-async def score_event(msg: types.Message):
-    if msg.text != "В главное меню":
-        # Берём список мероприятий за выбранный день
-        events_by_date = \
-            cursor.execute(f''' SELECT * FROM Events
-                           WHERE date=? AND city=?''',
-                           (msg.text, user_city)).fetchall()
-
-        send_text = f"Твои мероприятия на {msg.text}:"
-        # Открываем JSON со структурой Мероприятие: [участник 1, участник 2...]
-        with open('./res/data/participants_of_events.json',
-                  'r', encoding='utf-8') as participants_of_events:
-            # Читаем файл
-            data = json.load(participants_of_events)
-
-        # Перебираем мероприятия за этот день
-        for event in events_by_date:
-            # Берем его название
-            event_title = event[0]
-
-            # Если это название уже есть в JSON
-            if event_title in data:
-                # Если ID пользователя уже добавлен в список участников
-                # этого мероприятия
-                if getValueByTgID(tgID=msg.from_user.id) in data[event_title]:
-                    # Формируем сообщение
-                    send_text += f"\n✅ {event[0]}\n" + \
-                        f"Описание: {event[1]}\n" + \
-                        f"Время: {event[3]} - {event[4]}\n" + \
-                        f"Место: {event[5]}\n"
-
-        # Если найдены мероприятия
-        if send_text != f"Твои мероприятия на {msg.text}:":
-            # Отправляем сообщение со списком мероприятий,
-            # где зарегистрирован пользователь
-            await bot.send_message(msg.from_user.id, send_text)
-        # А если не найдены
-        else:
-            await bot.send_message(msg.from_user.id,
-                                   f"Твои мероприятия на {msg.text}" +
-                                   " не найдены! Пройди регистрацию " +
-                                   " на воркшопы, походящие в данный день.")
-
-    # Переходим в главное меню
-    state = dp.current_state(user=msg.from_user.id)
-    await state.set_state(BotStates.START_STATE)
-    await start(msg)
-
-
 @dp.message_handler(state=BotStates.SEND_MSG_TO_SUPPORT)
 async def score_event(msg: types.Message):
-    last_msg_id = cursor.execute('''SELECT id FROM MsgToSupport''')\
-        .fetchall()[-1][0]
+    if cursor.execute('''SELECT id FROM MsgToSupport''').fetchall():
+        last_msg_id = cursor.execute('''SELECT id FROM MsgToSupport''')\
+            .fetchall()[-1][0]
+    else:
+        last_msg_id = 0
     cursor.execute(f'''INSERT INTO MsgToSupport
                    (id, user_id, tg_id, name, city, message)
                    VALUES (?, ?, ?, ?, ?, ?)''',
