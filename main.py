@@ -4,7 +4,8 @@ from res.reply_texts import *
 from res.SendNotify import send_notify
 
 from aiogram import Bot, types, Dispatcher, executor
-from aiogram.types import ParseMode, KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types import ParseMode, KeyboardButton, ReplyKeyboardMarkup, \
+    InputFile
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.contrib.middlewares.logging import LoggingMiddleware
@@ -29,6 +30,13 @@ cursor = conn.cursor()
 # Временная переменная для передачи данных между чем-либо
 _temp = None
 user_city = ""
+
+# Пути до изображений карт площадок
+forum_maps = {
+    "Яр-Сале": "./res/forum_maps/yar_sale.jpg",
+    "Надым": "./res/forum_maps/nadym.jpg",
+    "Тарко-Сале": "./res/forum_maps/tarko_sale.jpg"
+}
 
 # Кнопки главного меню
 buttons = [
@@ -125,7 +133,12 @@ async def help(msg: types.Message):
 @dp.message_handler(state=BotStates.HOME_STATE)
 async def reply_to_text_msg(msg: types.Message):
     if msg.text == buttons[0]:
-        pass
+        map_path = forum_maps[user_city]
+        map = InputFile(path_or_bytesio=map_path,
+                        filename=f"{user_city}_map.jpg")
+
+        await bot.send_photo(msg.from_user.id, map,
+                             caption="Лови карту своей площадки!")
     elif msg.text == buttons[1]:
         await bot.send_message(msg.from_user.id, choice(TIMETABLE_TITLE_TEXTS))
 
