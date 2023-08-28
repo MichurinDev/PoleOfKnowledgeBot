@@ -7,7 +7,8 @@ from aiogram import Bot, types, Dispatcher, executor
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.contrib.middlewares.logging import LoggingMiddleware
 from aiogram.dispatcher.filters.state import State, StatesGroup
-from aiogram.types import KeyboardButton, ReplyKeyboardMarkup, ParseMode
+from aiogram.types import KeyboardButton, ReplyKeyboardMarkup, ParseMode, \
+    ContentType
 
 import sqlite3
 import json
@@ -300,15 +301,16 @@ async def send_msg_to_users(msg: types.Message):
         if msg.text != "Шаблоны":
             # Список ID зарегистрированных пользователей
             users = cursor.execute('''SELECT tg_id FROM UsersInfo
-                                   WHERE city=?''',
-                                   (user_city,)).fetchall()
+                                   WHERE city=? AND tg_id <> ?''',
+                                   (user_city, "None")).fetchall()
 
             await bot.send_message(msg.from_user.id, "Отправка...")
 
             # Перебираем ID зарегистрированных пользоателей
             for user in users:
-                # Отправляем сообщение пользователю
-                send_notify(token=TOKEN, msg=msg.text, chatId=user[0])
+                if user != msg.from_user.id:
+                    # Отправляем сообщение пользователю
+                    send_notify(token=TOKEN, msg=msg.text, chatId=user[0])
 
             await bot.send_message(msg.from_user.id, "Сообщение отправлено!")
 
