@@ -127,7 +127,9 @@ async def reply_to_text_msg(msg: types.Message):
     if msg.text == buttons[0]:
         pass
     elif msg.text == buttons[1]:
-        # Берем все мероприятия за введённую дату
+        await bot.send_message(msg.from_user.id, choice(TIMETABLE_TITLE_TEXTS))
+
+        # Берем все мероприятия по городу
         events = cursor.execute(f''' SELECT title, description, start, end,
                                 place, currentParticipants, maxParticipants
                                 FROM Events WHERE city=?''',
@@ -138,8 +140,14 @@ async def reply_to_text_msg(msg: types.Message):
             send_text += f"\n✅ {event[0]}\n" + \
                 f"Описание: {event[1]}\n" + \
                 f"Время: {event[2]} - {event[3]}\n" + \
-                f"Место: {event[4]}\n" + \
-                f"Количество мест: {event[6] - event[5]}/{event[6]}\n"
+                f"Место: {event[4]}\n"
+
+            # Если регистрация не закрыта
+            if cursor.execute('''SELECT entryIsOpen FROM Events
+                              WHERE city=? AND title=?''',
+                              (user_city, event[0])).fetchall()[0][0]:
+                send_text += f"Количество мест: {event[6] - event[5]}/" +\
+                    f"{event[6]}\n"
 
         await bot.send_message(msg.from_user.id, send_text)
     elif msg.text == buttons[2]:
@@ -336,6 +344,8 @@ async def choice_event(msg: types.Message):
                                           (msg.text, user_city))\
                                             .fetchall()[0][0]
             # Сохраняем название и оценки мероприятия
+            if not event_scores:
+                event_scores = ""
             _temp = [msg.text, event_scores]
 
             # Формируем клавиатуру
@@ -344,6 +354,8 @@ async def choice_event(msg: types.Message):
                 keyboard.add(KeyboardButton(str(i)))
             keyboard.add(KeyboardButton("В главное меню"))
 
+            username = getValueByTgID(value_column='name',
+                                      tgID=msg.from_user.id)
             # Отправляем сообщение
             await bot.send_message(
                 msg.from_user.id,
@@ -355,8 +367,7 @@ async def choice_event(msg: types.Message):
                     "Как здорово, что ты побывал тут! Расскажи о " +
                     "своих впечатлениях",
 
-                    f"Ну что, {getValueByTgID(value_column='name',
-                                              tgID=msg.from_user.id)}, " +
+                    f"Ну что, {username}, " +
                     "как все прошло? Поделишься со мной эмоциями?",
 
                     "Эх, я совсем не успеваю сегодня обойти все площадки..." +
@@ -388,12 +399,17 @@ async def score_event(msg: types.Message):
             _temp[1] += f'{msg.text};'
 
             # Обновляем оценки мероприятия
-            cursor.execute(f'''UPDATE Events SET scores = ? WHERE title = ?''',
-                           (_temp[1], _temp[0]))
+            cursor.execute(f'''UPDATE Events SET scores=?
+                           WHERE title=? AND city=?''',
+                           (_temp[1], _temp[0], user_city))
             conn.commit()
 
             # Отправляем сообщение
             await bot.send_message(msg.from_user.id, "Гав! Спасибо за оценку!")
+            await bot.send_sticker(msg.from_user.id,
+                                   "CAACAgQAAxkBAAEKJmtk7N" +
+                                   "x-YxWeIbqjSuM6JHDnxj54" +
+                                   "zQACjgkAAqWXcVGLxxsnCGe5rTAE")
 
             # "Обнуляем" временную переменную
             _temp = None
