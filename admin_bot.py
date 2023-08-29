@@ -34,6 +34,8 @@ class BotStates(StatesGroup):
     CHOICE_MSG_TO_SUPPORT = State()
     SEND_REPLY_TO_SUPPORT_MSG = State()
 
+    CHANGE_USER_CITY = State()
+
 
 # Объект бота
 bot = Bot(token=ADMIN_TOKEN)
@@ -46,8 +48,9 @@ conn = sqlite3.connect('res/data/PoleOfKnowledge_db.db')
 cursor = conn.cursor()
 
 buttons = [
+    'Сменить город',
     'Отправить сообщение участникам форума',
-    'Выгрузить список участников мероприятия',
+    'Выгрузить список участников воркшопов',
     'Список команд для квеста',
     'Рейтинг мероприятий',
     'Открыть/закрыть запись на воркшопы',
@@ -65,13 +68,14 @@ async def start(msg: types.Message):
     global user_city, user_type
 
     # Берём список всех зарегистрированных пользователей с выборков по ID
-    cursor.execute(
-        f''' SELECT * FROM UsersInfo WHERE tg_id={msg.from_user.id}''')
-    users = cursor.fetchall()
+    user_by_tgID = cursor.execute(f''' SELECT city, type FROM UsersInfo
+                           WHERE tg_id={msg.from_user.id}''').fetchall()
 
     state = dp.current_state(user=msg.from_user.id)
 
-    if users:
+    if user_by_tgID:
+        user_by_tgID = user_by_tgID[0]
+
         # Формируем клавиатуру с меню по боту
         keyboard = ReplyKeyboardMarkup()
         for bnt in buttons:
@@ -83,10 +87,7 @@ async def start(msg: types.Message):
             await bot.send_message(
                 msg.from_user.id, f"Здравсвуйте!")
 
-        user_city, user_type = \
-            cursor.execute('''SELECT city, type FROM
-                           UsersInfo WHERE tg_id=?''',
-                           (msg.from_user.id,)).fetchall()[0]
+        user_city, user_type = user_by_tgID
 
         await bot.send_message(msg.from_user.id,
                                f"Город: {user_city}\n" +
@@ -108,8 +109,8 @@ async def start(msg: types.Message):
 @dp.message_handler(state=BotStates.ACQUAINTANCE_STATE)
 async def acquaintance(msg: types.Message):
     # Если пользователь с введёным ID существует
-    if cursor.execute('SELECT * FROM UsersInfo WHERE id=? AND tg_id IS NULL',
-                      (msg.text,)).fetchall():
+    if cursor.execute('''SELECT name FROM UsersInfo WHERE id=?
+                      AND tg_id IS NULL''', (msg.text,)).fetchall():
         # Добавляем нового пользователя
         cursor.execute('''UPDATE UsersInfo SET tg_id=?
                        WHERE id=? AND tg_id IS NULL''',
@@ -131,6 +132,23 @@ async def acquaintance(msg: types.Message):
 async def home(msg: types.Message):
     if msg.text == buttons[0]:
         if user_type in ['Администратор']:
+            cities = cursor.execute('''SELECT city
+                                    FROM ForumCities''').fetchall()
+            keyboard = ReplyKeyboardMarkup()
+
+            for city in cities:
+                keyboard.add(city[0])
+            keyboard.add("В главное меню")
+
+            await bot.send_message(msg.from_user.id,
+                                   f"Текущий город: {user_city}\n" +
+                                   "Выберите город:",
+                                   reply_markup=keyboard)
+
+            state = dp.current_state(user=msg.from_user.id)
+            await state.set_state(BotStates.CHANGE_USER_CITY.state)
+    elif msg.text == buttons[1]:
+        if user_type in ['Администратор']:
             keyboard = ReplyKeyboardMarkup()\
                 .add(KeyboardButton("Шаблоны"))\
                 .add(KeyboardButton("В главное меню"))
@@ -146,13 +164,13 @@ async def home(msg: types.Message):
             state = dp.current_state(user=msg.from_user.id)
             await state.set_state(BotStates.START_STATE.state)
             await start(msg)
-    elif msg.text == buttons[1]:
+    elif msg.text == buttons[2]:
         if user_type in ['Администратор', 'Волонтёр']:
             # Берём названия мероприятий в нужном городе
             events_titles_list = \
                 list(map(lambda x: x[0],
-                         cursor.execute('''SELECT title
-                                        FROM Events WHERE city=?''',
+                         cursor.execute('''SELECT title FROM Workshops
+                                        WHERE city=?''',
                                         (user_city,)).fetchall()))
 
             # Формируем клавиатуру
@@ -161,7 +179,7 @@ async def home(msg: types.Message):
                 keyboard.add(KeyboardButton(bnt))
             keyboard.add(KeyboardButton("В главное меню"))
 
-            await bot.send_message(msg.from_user.id, "Выберите мероприятие:",
+            await bot.send_message(msg.from_user.id, "Выберите воркшоп:",
                                    reply_markup=keyboard)
 
             state = dp.current_state(user=msg.from_user.id)
@@ -172,7 +190,7 @@ async def home(msg: types.Message):
             state = dp.current_state(user=msg.from_user.id)
             await state.set_state(BotStates.START_STATE.state)
             await start(msg)
-    elif msg.text == buttons[2]:
+    elif msg.text == buttons[3]:
         if user_type in ['Администратор', 'Волонтёр']:
             # Открываем JSON с информацией о командах для квеста
             with open('./res/data/quest_commands.json',
@@ -183,16 +201,34 @@ async def home(msg: types.Message):
             send_message = ""
             for team in data[user_city]:
                 # ФИО участников мерпориятия по ID: [ФИО1, ФИО2...]
-                ids_str = ','.join(list(map(str, data[user_city][team])))
-                teamers_list = \
-                    [x[0] for x in cursor
-                     .execute(f'''SELECT name FROM UsersInfo
-                            WHERE id in ({ids_str})''').fetchall()]
+                if team != "students":
+                    ids_str = ','.join(list(map(str, data[user_city][team])))
+                    teamers_list = \
+                        [x[0] for x in cursor
+                         .execute(f'''SELECT name FROM UsersInfo
+                                WHERE id in ({ids_str})''').fetchall()]
 
-                # Формируем сообщение
-                send_message += f"\n\n{team} ({len(teamers_list)} человек):"
-                for user in teamers_list:
-                    send_message += f"\n- {user}"
+                    # Формируем сообщение
+                    send_message += f"\n\n{team} " +\
+                        "({len(teamers_list)} человек):"
+                    for user in teamers_list:
+                        send_message += f"\n- {user}"
+                else:
+                    students_teams = team
+                    for student_team in data[user_city][students_teams]:
+                        ids_str = ','.join(list(map(str, data[user_city]
+                                                    ["students"][student_team]
+                                                    )))
+                        teamers_list = \
+                            [x[0] for x in cursor
+                             .execute(f'''SELECT name FROM UsersInfo
+                                    WHERE id in ({ids_str})''').fetchall()]
+
+                        # Формируем сообщение
+                        send_message += f"\n\n{student_team} " +\
+                            f"({len(teamers_list)} человек):"
+                        for user in teamers_list:
+                            send_message += f"\n- {user}"
 
             # Отправляем сообщение
             await bot.send_message(msg.from_user.id, send_message)
@@ -203,16 +239,21 @@ async def home(msg: types.Message):
         state = dp.current_state(user=msg.from_user.id)
         await state.set_state(BotStates.START_STATE.state)
         await start(msg)
-    elif msg.text == buttons[3]:
+    elif msg.text == buttons[4]:
         if user_type in ['Администратор']:
             events = cursor.execute(f''' SELECT title, scores
                                     FROM Events WHERE city=?''',
                                     (user_city,)).fetchall()
             send_text = "Рейтинги мероприятий:"
             for event in events:
-                rating = round(sum(list(map(int, event[1].split(";")[:-1]))) /
-                               len(list(map(int, event[1].split(";")[:-1]))),
-                               1)
+                if event[1]:
+                    rating = round(sum(list(map(int,
+                                                event[1].split(";")[:-1]))) /
+                                   len(list(map(int,
+                                                event[1].split(";")[:-1]))),
+                                   1)
+                else:
+                    rating = float(0)
                 send_text += f"\n- {event[0]}: {rating}/5.0"
 
             await bot.send_message(msg.from_user.id, send_text)
@@ -223,10 +264,10 @@ async def home(msg: types.Message):
         state = dp.current_state(user=msg.from_user.id)
         await state.set_state(BotStates.START_STATE.state)
         await start(msg)
-    elif msg.text == buttons[4]:
+    elif msg.text == buttons[5]:
         if user_type in ['Администратор']:
             events = cursor.execute("""SELECT title, entryIsOpen
-                                    FROM Events WHERE city=?""",
+                                    FROM Workshops WHERE city=?""",
                                     (user_city,)).fetchall()
             send_text = "Выберите мероприятие:"
             keyboard = ReplyKeyboardMarkup()
@@ -256,32 +297,36 @@ async def home(msg: types.Message):
             state = dp.current_state(user=msg.from_user.id)
             await state.set_state(BotStates.START_STATE.state)
             await start(msg)
-    elif msg.text == buttons[5]:
+    elif msg.text == buttons[6]:
         if user_type in ['Администратор', 'Волонтёр']:
             messages = cursor.execute(f'''SELECT id, user_id, name, message
                                       FROM MsgToSupport WHERE city=?
                                       AND isSolved=0''', (user_city,))\
                                         .fetchall()
+            if messages:
+                send_text = "Обращения в поддержку:\n-----"
+                keyboard = ReplyKeyboardMarkup()
 
-            send_text = "Обращения в поддержку:\n-----"
-            keyboard = ReplyKeyboardMarkup()
+                for message in messages:
+                    send_text += f"\nID вопроса: {message[0]}" +\
+                        f"\nID участника: {message[1]}" +\
+                        f"\nИмя: {message[2]}" +\
+                        f"\nСообщение: {message[3][:20]}"
+                    send_text += "\n-----"
 
-            for message in messages:
-                send_text += f"\nID вопроса: {message[0]}" +\
-                    f"\nID участника: {message[1]}" +\
-                    f"\nИмя: {message[2]}" +\
-                    f"\nСообщение: {message[3][:20]}"
-                send_text += "\n-----"
+                    keyboard.add(str(message[0]))
 
-                keyboard.add(str(message[0]))
+                keyboard.add("В главное меню")
 
-            keyboard.add("В главное меню")
+                await bot.send_message(msg.from_user.id, send_text,
+                                       reply_markup=keyboard)
 
-            await bot.send_message(msg.from_user.id, send_text,
-                                   reply_markup=keyboard)
-
-            state = dp.current_state(user=msg.from_user.id)
-            await state.set_state(BotStates.CHOICE_MSG_TO_SUPPORT.state)
+                state = dp.current_state(user=msg.from_user.id)
+                await state.set_state(BotStates.CHOICE_MSG_TO_SUPPORT.state)
+            else:
+                await bot.send_message(msg.from_user.id,
+                                       "Обращений в службу поддержки" +
+                                       " не найдено")
         else:
             await bot.send_message(msg.from_user.id,
                                    ADMINISTRATOR_ACCESS_ERROR)
@@ -336,9 +381,9 @@ async def get_parts_by_event_title(msg: types.Message):
             # Читаем файл
             data = json.load(participants_of_events)
 
-        if msg.text in data:
+        if msg.text in data[user_city]:
             # Список ID участников мероприятия
-            participants = data[msg.text]
+            participants = data[user_city][msg.text]
             # ФИО участников мерпориятия по ID: [ФИО1, ФИО2...]
             usernames = [x[0] for x in cursor.execute(
                 f''' SELECT name FROM UsersInfo
@@ -367,18 +412,19 @@ async def get_parts_by_event_title(msg: types.Message):
 @dp.message_handler(state=BotStates.CHOICE_EVENT_TO_SWITCH_ENTRY)
 async def send_msg_to_users(msg: types.Message):
     if msg.text != "В главное меню":
-        if cursor.execute(f'''SELECT date FROM Events WHERE title=?''',
-                          (msg.text,)).fetchall():
-            currentEntryIsOpen = \
-                cursor.execute('''SELECT entryIsOpen FROM
-                               Events WHERE title=? AND city=?''',
-                               (msg.text, user_city)).fetchall()[0][0]
+        currentEntryIsOpen = cursor.execute('''SELECT
+                                            entryIsOpen FROM Workshops
+                                            WHERE title=? AND city=?''',
+                                            (msg.text, user_city)).fetchall()
+
+        if currentEntryIsOpen:
+            currentEntryIsOpen = currentEntryIsOpen[0][0]
             if currentEntryIsOpen == 1:
-                cursor.execute('''UPDATE Events SET entryIsOpen=?
+                cursor.execute('''UPDATE Workshops SET entryIsOpen=?
                                WHERE title=? AND city=?''',
                                (0, msg.text, user_city))
             elif currentEntryIsOpen == 0:
-                cursor.execute('''UPDATE Events SET entryIsOpen=?
+                cursor.execute('''UPDATE Workshops SET entryIsOpen=?
                                WHERE title=? AND city=?''',
                                (1, msg.text, user_city))
             conn.commit()
@@ -453,6 +499,33 @@ async def send_msg_to_users(msg: types.Message):
     state = dp.current_state(user=msg.from_user.id)
     await state.set_state(BotStates.HOME_STATE.state)
     await start(msg)
+
+
+@dp.message_handler(state=BotStates.CHANGE_USER_CITY)
+async def send_msg_to_users(msg: types.Message):
+    if msg.text != "В главное меню":
+        cities = list(map(lambda x: x[0],
+                          cursor.execute('''SELECT city FROM
+                                         ForumCities''').fetchall()))
+        if msg.text in cities:
+            cursor.execute(f'''UPDATE UsersInfo SET city=? WHERE tg_id=?''',
+                           (msg.text, msg.from_user.id))
+            conn.commit()
+
+            await bot.send_message(msg.from_user.id,
+                                   f"Ваш город изменён на {msg.text}")
+
+            # Выходим в главное меню
+            state = dp.current_state(user=msg.from_user.id)
+            await state.set_state(BotStates.HOME_STATE.state)
+            await start(msg)
+        else:
+            await bot.send_message(msg.from_user.id, "Город не найден!")
+    else:
+        # Выходим в главное меню
+        state = dp.current_state(user=msg.from_user.id)
+        await state.set_state(BotStates.HOME_STATE.state)
+        await start(msg)
 
 # Запуск бота
 if __name__ == '__main__':
