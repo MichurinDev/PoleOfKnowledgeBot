@@ -17,6 +17,8 @@ def sturtup_admin_bot():
         os.system("python admin_bot.py")
 
 
+os.system("pip install -r requirements.txt")
+
 client = Thread(target=sturtup_client_bot)
 client.start()
 
