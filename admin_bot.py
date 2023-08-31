@@ -148,7 +148,8 @@ async def home(msg: types.Message):
             state = dp.current_state(user=msg.from_user.id)
             await state.set_state(BotStates.CHANGE_USER_CITY.state)
         else:
-            await bot.send_message(msg.from_user.id, ADMINISTRATOR_ACCESS_ERROR)
+            await bot.send_message(msg.from_user.id,
+                                   ADMINISTRATOR_ACCESS_ERROR)
 
             state = dp.current_state(user=msg.from_user.id)
             await state.set_state(BotStates.START_STATE.state)
