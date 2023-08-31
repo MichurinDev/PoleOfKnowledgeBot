@@ -95,10 +95,14 @@ async def start(msg: types.Message):
         # Формируем клавиатуру с меню по боту
         keyboard = ReplyKeyboardMarkup()
         for btn in buttons:
-            if (btn != buttons[2] or (btn == buttons[2] and getValueByTgID(
-                    value_column="type", tgID=msg.from_user.id) == "Ученик")) or \
-                        (btn != buttons[3] or (btn == buttons[3] and getValueByTgID(
-                    value_column="type", tgID=msg.from_user.id) == "Учитель")):
+            if btn != buttons[2] or\
+                    (btn == buttons[2] and
+                     getValueByTgID(value_column="type",
+                                    tgID=msg.from_user.id) == "Ученик") or\
+                    btn != buttons[3] or\
+                    (btn == buttons[3] and
+                     getValueByTgID(value_column="type",
+                                    tgID=msg.from_user.id) == "Учитель"):
                 keyboard.add(KeyboardButton(btn))
 
         # Отправляем ее вместе с приветственным сообщением
