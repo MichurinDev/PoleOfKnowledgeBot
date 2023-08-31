@@ -305,7 +305,7 @@ async def home(msg: types.Message):
             await state.set_state(BotStates.START_STATE.state)
             await start(msg)
     elif msg.text == buttons[6]:
-        if user_type in ['Администратор', 'Волонтёр']:
+        if user_type in ['Администратор']:
             messages = cursor.execute(f'''SELECT id, user_id, name, message
                                       FROM MsgToSupport WHERE city=?
                                       AND isSolved=0''', (user_city,))\

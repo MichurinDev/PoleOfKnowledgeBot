@@ -95,14 +95,13 @@ async def start(msg: types.Message):
         # Формируем клавиатуру с меню по боту
         keyboard = ReplyKeyboardMarkup()
         for btn in buttons:
-            if btn != buttons[2] or\
+            if (btn != buttons[2] and btn != buttons[3]) or\
                     (btn == buttons[2] and
                      getValueByTgID(value_column="type",
                                     tgID=msg.from_user.id) == "Ученик") or\
-                    btn != buttons[3] or\
                     (btn == buttons[3] and
                      getValueByTgID(value_column="type",
-                                    tgID=msg.from_user.id) == "Учитель"):
+                                    tgID=msg.from_user.id) == "Ученик"):
                 keyboard.add(KeyboardButton(btn))
 
         # Отправляем ее вместе с приветственным сообщением
@@ -321,25 +320,40 @@ async def acquaintance_for_user(msg: types.Message):
             # Добавляем туда нового пользователя
             data[user_city]["students"][team_name].append(
                 getValueByTgID(tgID=msg.from_user.id))
+
+            # И отправляем сообщение о распределении
+            await bot.send_message(
+                msg.from_user.id,
+                'Кррррутяк! Я от радости даже начал вилять своим ' +
+                f'электронным хвостом! Теперь ты в команде {team_name}. ' +
+                'Тебе выдадут браслет с цветом твоей команды.')
+
+            # Обновляем JSON-файл
+            with open('./res/data/quest_commands.json',
+                      'w', encoding='utf-8') as quest_commands:
+                json.dump(data,
+                          quest_commands,
+                          indent=4,
+                          ensure_ascii=False)
         elif user_type == "Учитель":
             team_name = "Фиолетовая звезда"
             data[user_city][team_name].append(
                 getValueByTgID(tgID=msg.from_user.id))
 
-        # И отправляем сообщение о распределении
-        await bot.send_message(
-            msg.from_user.id,
-            'Кррррутяк! Я от радости даже начал вилять своим ' +
-            f'электронным хвостом! Теперь ты в команде {team_name}. ' +
-            'Тебе выдадут браслет с цветом твоей команды.')
+            # И отправляем сообщение о распределении
+            await bot.send_message(
+                msg.from_user.id,
+                'Кррррутяк! Я от радости даже начал вилять своим ' +
+                f'электронным хвостом! Теперь ты в команде {team_name}. ' +
+                'Тебе выдадут браслет с цветом твоей команды.')
 
-        # Обновляем JSON-файл
-        with open('./res/data/quest_commands.json',
-                  'w', encoding='utf-8') as quest_commands:
-            json.dump(data,
-                      quest_commands,
-                      indent=4,
-                      ensure_ascii=False)
+            # Обновляем JSON-файл
+            with open('./res/data/quest_commands.json',
+                      'w', encoding='utf-8') as quest_commands:
+                json.dump(data,
+                          quest_commands,
+                          indent=4,
+                          ensure_ascii=False)
 
         # Возвращаемся в главное меню
         state = dp.current_state(user=msg.from_user.id)
