@@ -156,12 +156,14 @@ async def reply_to_text_msg(msg: types.Message):
         invited_events = list(filter(lambda x: user_type in x[5], events))
 
         send_text = ""
-        for event in invited_events:
-            send_text += f"\n✅ {event[0]}\n" + \
-                f"Описание: {event[1]}\n" + \
-                f"Время: {event[2]} - {event[3]}\n" + \
-                f"Место: {event[4]}\n"
-
+        if invited_events:
+            for event in invited_events:
+                send_text += f"\n✅ {event[0]}\n" + \
+                    f"Описание: {event[1]}\n" + \
+                    f"Время: {event[2]} - {event[3]}\n" + \
+                    f"Место: {event[4]}\n"
+        else:
+            send_text = "Мероприятия не найдены!"
         await bot.send_message(msg.from_user.id, send_text)
     elif msg.text == buttons[2]:
         if getValueByTgID(
