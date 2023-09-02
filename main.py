@@ -148,22 +148,36 @@ async def reply_to_text_msg(msg: types.Message):
     elif msg.text == buttons[1]:
         await bot.send_message(msg.from_user.id, choice(TIMETABLE_TITLE_TEXTS))
 
-        # Берем все мероприятия по городу
-        events = cursor.execute(f''' SELECT title, description, start, end,
-                                   place, invitedUserTypes FROM Events
-                                   WHERE city=?''', (user_city,)).fetchall()
-
-        invited_events = list(filter(lambda x: user_type in x[5], events))
-
         send_text = ""
-        if invited_events:
-            for event in invited_events:
+
+        if user_type != "Администратор":
+            # Берем все мероприятия по городу
+            events = cursor.execute(f''' SELECT title, description, start, end,
+                                    place, invitedUserTypes FROM Events
+                                    WHERE city=?''', (user_city,)).fetchall()
+
+            invited_events = list(filter(lambda x: user_type in x[5], events))
+
+            if invited_events:
+                for event in invited_events:
+                    send_text += f"\n✅ {event[0]}\n" + \
+                        f"Описание: {event[1]}\n" + \
+                        f"Время: {event[2]} - {event[3]}\n" + \
+                        f"Место: {event[4]}\n"
+            else:
+                send_text = "Мероприятия не найдены!"
+        else:
+            # Берем все мероприятия по городу
+            events = cursor.execute(f''' SELECT title, description, start, end,
+                                    place, invitedUserTypes FROM Events
+                                    WHERE city=?''', (user_city,)).fetchall()
+
+            for event in events:
                 send_text += f"\n✅ {event[0]}\n" + \
                     f"Описание: {event[1]}\n" + \
                     f"Время: {event[2]} - {event[3]}\n" + \
                     f"Место: {event[4]}\n"
-        else:
-            send_text = "Мероприятия не найдены!"
+
         await bot.send_message(msg.from_user.id, send_text)
     elif msg.text == buttons[2]:
         if getValueByTgID(
