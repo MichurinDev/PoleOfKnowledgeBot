@@ -456,9 +456,9 @@ async def score_event(msg: types.Message):
             # Отправляем сообщение
             await bot.send_message(msg.from_user.id, "Гав! Спасибо за оценку!")
             await bot.send_sticker(msg.from_user.id,
-                                   "CAACAgQAAxkBAAEKJmtk7N" +
-                                   "x-YxWeIbqjSuM6JHDnxj54" +
-                                   "zQACjgkAAqWXcVGLxxsnCGe5rTAE")
+                                   "CAACAgIAAxkBAAEKMfxk8mJ" +
+                                   "3O3ut2HeOGOwTrbPHQO8ycw" +
+                                   "ACFDQAAu0RmEucG2GmeEXS6zAE")
 
             # "Обнуляем" временную переменную
             _temp = None
