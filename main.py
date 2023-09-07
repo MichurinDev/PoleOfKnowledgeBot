@@ -173,53 +173,29 @@ async def reply_to_text_msg(msg: types.Message):
     elif msg.text == buttons[2]:
         if getValueByTgID(
                 value_column="type", tgID=msg.from_user.id) == "Ученик":
-            # Читаем JSON-файл с участниками воркшопов
-            with open('./res/data/participants_of_events.json',
-                      'r', encoding='utf-8') as participants_of_events:
-                # Читаем файл
-                data = json.load(participants_of_events)
-
-            user_already_is_register = False
-            for event in data[user_city]:
-                if getValueByTgID(tgID=msg.from_user.id) in\
-                        data[user_city][event]:
-                    user_already_is_register = True
-
-            if not user_already_is_register:
+            if not cursor.execute('''SELECT workshop FROM UsersInfo
+                                  WHERE type="Ученик" AND
+                                  workshop="Null"''').fetchall():
                 # Берем все воркшопы в городе
                 events = cursor.execute(''' SELECT * FROM Workshops WHERE
                                         entryIsOpen=? AND city=?''',
                                         (1, user_city)).fetchall()
-                if events:
-                    send_text = "Выбери воркшоп:"
-                    keyboard = ReplyKeyboardMarkup()
+                send_text = "Выбери воркшоп:"
+                keyboard = ReplyKeyboardMarkup()
 
-                    user_id = getValueByTgID(tgID=msg.from_user.id)
-                    for event in events:
-                        # Если мероприятие есть в JSON-файле и
-                        # на него не зарегистрирован пользователь
-                        # или если мероприятия нет в JSON-файле
-                        if (event[0] in data and
-                            user_id not in data[event[0]]) or \
-                                (event[0] not in data):
+                for event in events:
+                    keyboard.add(KeyboardButton(event[0]))
 
-                            # Формируем клавиатуру со списком мероприятий
-                            keyboard.add(KeyboardButton(event[0]))
+                keyboard.add(KeyboardButton("В главное меню"))
 
-                    keyboard.add(KeyboardButton("В главное меню"))
+                # Отправляем список воркшопов
+                await bot.send_message(msg.from_user.id,
+                                       send_text,
+                                       reply_markup=keyboard)
 
-                    # Отправляем список мероприятий на выбранный день
-                    await bot.send_message(msg.from_user.id,
-                                           send_text,
-                                           reply_markup=keyboard)
-
-                    state = dp.current_state(user=msg.from_user.id)
-                    await state.set_state(
-                        BotStates.CHOICE_EVENT_SING_UP_FOR_EVENT)
-                else:
-                    await bot.send_message(msg.from_user.id,
-                                           "На данный момент доступных" +
-                                           " воркшопов нет")
+                state = dp.current_state(user=msg.from_user.id)
+                await state.set_state(
+                    BotStates.CHOICE_EVENT_SING_UP_FOR_EVENT)
             else:
                 await bot.send_message(msg.from_user.id,
                                        "Ты уже выбрал воркшоп!")
@@ -229,35 +205,19 @@ async def reply_to_text_msg(msg: types.Message):
                                    "только ученики!")
     elif msg.text == buttons[3]:
         send_text = "Воркшоп, на который ты зарегистрирован:"
-        # Открываем JSON со структурой Воркшоп: [ID 1, ID 2...]
-        with open('./res/data/participants_of_events.json',
-                  'r', encoding='utf-8') as participants_of_events:
-            # Читаем файл
-            data = json.load(participants_of_events)
+        user_workshop = cursor.execute('''SELECT workshop FROM
+                                       UsersInfo  WHERE tg_id=?
+                                       AND workshop <> "None"''',
+                                       (msg.from_user.id,)).fetchall()
 
-        user_already_is_register = False
-        # Перебираем ворк шопы, на которые уже кто-то регистрировался
-        for event in data[user_city]:
-            # Если пользователь зарегистрирован на воркшоп
-            if getValueByTgID(tgID=msg.from_user.id) in data[user_city][event]:
-                user_already_is_register = True
-                place = cursor.execute('''SELECT place FROM Workshops
-                                       WHERE title=?''',
-                                       (event,)).fetchall()[0][0]
-                # Формируем сообщение
-                send_text += f"\n✅ {event}\n" + \
-                    f"Место: {place}\n"
-
-        # Если зарегистрирован
-        if user_already_is_register:
-            # Отправляем сообщение со списком мероприятий,
-            # где зарегистрирован пользователь
-            await bot.send_message(msg.from_user.id, send_text)
-        # А если не найдены
+        if user_workshop:
+            send_text = "Воркшоп, на который ты зарегистрирован:" +\
+                f"\n✅ {user_workshop[0][0]}"
         else:
-            await bot.send_message(msg.from_user.id,
-                                   "Ты еще не зарегистрировался ни на" +
-                                   " один воркшоп! Скорее регистрируйся!")
+            send_text = "Ты еще не зарегистрировался ни на один воркшоп!" +\
+                " Скорее регистрируйся"
+
+        await bot.send_message(msg.from_user.id, send_text)
     elif msg.text == buttons[4]:
         await bot.send_message(msg.from_user.id, "Текст про награды")
     elif msg.text == buttons[5]:
@@ -384,8 +344,6 @@ async def choice_event(msg: types.Message):
             # Берем оценки мероприятия
             event_scores = event_scores[0][0]
             # Сохраняем название и оценки мероприятия
-            if not event_scores:
-                event_scores = ""
             _temp = [msg.text, event_scores]
 
             # Формируем клавиатуру
@@ -472,7 +430,7 @@ async def score_event(msg: types.Message):
 @dp.message_handler(state=BotStates.CHOICE_EVENT_SING_UP_FOR_EVENT)
 async def score_event(msg: types.Message):
     if msg.text != "В главное меню":
-        workshop = cursor.execute(f''' SELECT currentParticipants,
+        workshop = cursor.execute('''SELECT currentParticipants,
                                   maxParticipants FROM Workshops
                                   WHERE title=? AND entryIsOpen=?
                                   AND city=?''',
@@ -480,39 +438,17 @@ async def score_event(msg: types.Message):
 
         # Если такое мепроприятие существует
         if workshop:
-            # Открываем JSON со структурой
-            # Мероприятие: [участник 1, участник 2...]
-            with open('./res/data/participants_of_events.json',
-                      'r', encoding='utf-8') as participants_of_events:
-                # Читаем файл
-                data = json.load(participants_of_events)
-
-            # Получаем ID пльзователя
-            user_id = getValueByTgID("UsersInfo", "id", msg.from_user.id)
-
-            # Добавляем участника на мероприятие,
-            # если на это мероприятие уже кто-то регистрировался
-            if msg.text in data[user_city]:
-                data[user_city][msg.text].append(user_id)
-            # И если нет
-            else:
-                data[user_city][msg.text] = [user_id]
-
-            # Обновляем JSON-файл
-            with open('./res/data/participants_of_events.json',
-                      'w', encoding='utf-8') as participants_of_events:
-                json.dump(data,
-                          participants_of_events,
-                          indent=4,
-                          ensure_ascii=False)
+            cursor.execute('''UPDATE UsersInfo SET workshop=?
+                           WHERE tg_id=?''',
+                           (msg.text, msg.from_user.id))
 
             # Берём текущее количество участников
-            currentParticipantsCounter = workshop[0][0]
+            currentParticipantsCounter = workshop[0][0] + 1
 
             # Обновляем текущее число участников у мероприятия
-            cursor.execute(f'''UPDATE Workshops SET currentParticipants=?
+            cursor.execute('''UPDATE Workshops SET currentParticipants=?
                            WHERE title=? AND city=?''',
-                           (currentParticipantsCounter + 1, msg.text,
+                           (currentParticipantsCounter, msg.text,
                             user_city))
             conn.commit()
 
@@ -526,11 +462,11 @@ async def score_event(msg: types.Message):
             # если места на мероприятие заполнено на 75%
             maxtParticipantsCounter = workshop[0][1]
 
-            if currentParticipantsCounter / \
-                    maxtParticipantsCounter * 100 >= 75:
+            if currentParticipantsCounter / maxtParticipantsCounter >= 0.75:
                 users_tg_id = cursor.execute("""SELECT tg_id FROM UsersInfo
-                                             WHERE tg_id <> ? AND city=?""",
-                                             ("None", user_city)).fetchall()
+                                             WHERE tg_id<>"None" AND city=?
+                                             AND type="Ученик" """,
+                                             (user_city, )).fetchall()
 
                 for user_tg_id in users_tg_id:
                     if user_tg_id[0] != msg.from_user.id:

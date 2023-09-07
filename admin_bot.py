@@ -7,7 +7,8 @@ from aiogram import Bot, types, Dispatcher, executor
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.contrib.middlewares.logging import LoggingMiddleware
 from aiogram.dispatcher.filters.state import State, StatesGroup
-from aiogram.types import KeyboardButton, ReplyKeyboardMarkup, ParseMode
+from aiogram.types import KeyboardButton, ReplyKeyboardMarkup, ParseMode, \
+    ContentType
 
 import sqlite3
 import json
